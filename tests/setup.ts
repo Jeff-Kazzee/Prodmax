@@ -7,8 +7,9 @@ afterEach(cleanup);
 
 // jsdom does not implement matchMedia; sonner's <Toaster> (and responsive
 // components) require it, so provide an inert stub. Listeners are no-ops:
-// nothing in the test suite subscribes to media query changes.
-if (typeof window.matchMedia !== "function") {
+// nothing in the test suite subscribes to media query changes. Skipped in
+// node-environment files (tests/db/**), where `window` does not exist.
+if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     value: (query: string): MediaQueryList =>
