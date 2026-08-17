@@ -1,0 +1,17 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import App from "@/island/app";
+
+// Catch-all SSR shell: every route renders the single React island,
+// which takes over routing after hydration (architecture §1).
+export const prerender = false;
+
+const { slug } = Astro.params;
+const title = slug ? `Prodmax — ${slug}` : "Prodmax";
+---
+
+<Layout title={title}>
+  <div id="island-root" class="h-dvh">
+    <App client:only="react" />
+  </div>
+</Layout>
