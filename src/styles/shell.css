@@ -1,0 +1,300 @@
+/*
+ * shell.css — M2 app-shell additions (design-system §4.2 density vars,
+ * §4.6 z-index map, §8 motion tokens, §8.2 named animations, shell layout).
+ * M0-owned files (global.css, fonts.css) are untouched; this file is additive.
+ */
+
+/* ---------------------------------------------------------------- density */
+/* design-system §4.2 — applied via data-density on <html>; default comfortable */
+:root {
+  --row-h: 36px;
+  --cell-py: 7px;
+  --card-py: 10px;
+  --card-px: 12px;
+  --ctrl-h: 28px;
+  --ctrl-h-md: 32px;
+  --hit: 40px;
+  --list-gap: 2px;
+}
+
+html[data-density="compact"] {
+  --row-h: 28px;
+  --cell-py: 3px;
+  --card-py: 6px;
+  --card-px: 10px;
+  --ctrl-h: 24px;
+  --ctrl-h-md: 28px;
+  --hit: 32px;
+  --list-gap: 0px;
+}
+
+/* ------------------------------------------------------------- z-index map */
+:root {
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-sidebar: 20;
+  --z-panel: 30;
+  --z-palette: 40;
+  --z-dialog: 50;
+  --z-toast: 60;
+  --z-tooltip: 70;
+}
+
+/* ------------------------------------------------------------ motion §8.1 */
+:root {
+  --dur-instant: 60ms;
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 300ms;
+  --dur-slowest: 480ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* -------------------------------------------------- named animations §8.2 */
+@keyframes pmx-palette-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes pmx-panel-slide {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pmx-panel-slide-left {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pmx-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pmx-row-pulse {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  25%,
+  75% {
+    background-color: var(--accent);
+  }
+}
+
+.pmx-palette-in {
+  animation: pmx-palette-in 150ms var(--ease-enter);
+}
+.pmx-panel-slide {
+  animation: pmx-panel-slide 200ms var(--ease-enter);
+}
+.pmx-panel-slide-left {
+  animation: pmx-panel-slide-left 200ms var(--ease-enter);
+}
+.pmx-toast-in {
+  animation: pmx-toast-in 180ms var(--ease-enter);
+}
+.pmx-row-pulse {
+  animation: pmx-row-pulse 500ms var(--ease-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pmx-palette-in,
+  .pmx-panel-slide,
+  .pmx-panel-slide-left,
+  .pmx-toast-in,
+  .pmx-row-pulse {
+    animation-duration: 1ms;
+  }
+}
+
+/* ------------------------------------------------------------ shell layout */
+/* CSS grid [sidebar | main | panel-slot]; panel overlays (never reflows). */
+.pmx-shell-grid {
+  display: grid;
+  grid-template-columns: var(--pmx-sidebar-w, 240px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* data-sidebar: "full" (expanded column) | "rail" (48px column) | "hidden". */
+.pmx-shell-grid[data-sidebar="rail"] {
+  grid-template-columns: 48px minmax(0, 1fr);
+}
+.pmx-shell-grid[data-sidebar="hidden"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Sidebar column; width follows the resize handle within 200–320px. */
+.pmx-sidebar {
+  background: var(--card);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.pmx-shell-grid[data-sidebar="rail"] .pmx-sidebar,
+.pmx-shell-grid[data-sidebar="hidden"] .pmx-sidebar {
+  display: none;
+}
+
+.pmx-main-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pmx-content {
+  background: var(--background);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scroll-behavior: auto;
+}
+
+/* Rail: icon column (collapsed sidebar, or tablet default). */
+.pmx-sidebar-rail {
+  display: none;
+  background: var(--card);
+  border-right: 1px solid var(--border);
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 0;
+  overflow-y: auto;
+}
+.pmx-shell-grid[data-sidebar="rail"] .pmx-sidebar-rail {
+  display: flex;
+}
+
+/* Tablet drawer (expanded sidebar at 768–1023 renders as overlay, not grid). */
+.pmx-drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-sidebar) - 1);
+  background: var(--background);
+  opacity: 0.4;
+}
+
+/* Issue panel slot: overlay on the right, never reflows the grid (§3.1). */
+.pmx-panel-slot {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(480px, 100%);
+  z-index: var(--z-panel);
+  pointer-events: none;
+}
+.pmx-panel-slot > * {
+  pointer-events: auto;
+}
+
+/* Sync dot states (SB-19) — synced only until M8. */
+.pmx-sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--chart-2);
+  display: inline-block;
+}
+
+/* Bottom nav (<768px). */
+.pmx-bottom-nav {
+  border-top: 1px solid var(--border);
+  background: var(--card);
+  display: none;
+}
+
+/* Skip link — first tab stop (§3.5). */
+.pmx-skip-link {
+  position: fixed;
+  left: 8px;
+  top: 8px;
+  z-index: var(--z-tooltip);
+  transform: translateY(-200%);
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.pmx-skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+/* Resize handle (SB-09): 4px visual, 8px hit; disabled <1024px. */
+.pmx-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.pmx-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: transparent;
+}
+.pmx-resize-handle:hover::after,
+.pmx-resize-handle[data-dragging="true"]::after {
+  background: var(--border);
+}
+
+/* Tablet: full sidebar leaves the grid (drawer overlay instead). */
+@media (max-width: 1023px) {
+  .pmx-shell-grid[data-sidebar="full"] {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+  .pmx-resize-handle {
+    display: none !important;
+  }
+}
+
+/* Mobile: rail hides, bottom nav appears, panel slot goes full width. */
+@media (max-width: 767px) {
+  .pmx-shell-grid[data-sidebar="full"],
+  .pmx-shell-grid[data-sidebar="rail"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pmx-shell-grid[data-sidebar="rail"] .pmx-sidebar-rail {
+    display: none;
+  }
+  .pmx-bottom-nav {
+    display: flex;
+  }
+  .pmx-panel-slot {
+    width: 100%;
+  }
+}
