@@ -74,14 +74,18 @@ function headersInit(headers?: HeadersInit): Record<string, string> {
   return Object.fromEntries(new Headers(headers).entries());
 }
 
-type Handler = (ctx: unknown) => Response | Promise<Response>;
+type Handler<T> = (ctx: T) => Response | Promise<Response>;
 
 /**
  * Wrap an API route so thrown HttpErrors become the exact error shape.
  * Unknown throwables become INTERNAL 500 without leaking details.
+ *
+ * `T` is the endpoint's own context slice (e.g. `{ request, params }`), so
+ * unit tests can call handlers with partial contexts and Astro's full
+ * APIContext still satisfies it at runtime.
  */
-export function route(handler: Handler): (ctx: unknown) => Promise<Response> {
-  return async (ctx: unknown) => {
+export function route<T>(handler: Handler<T>): (ctx: T) => Promise<Response> {
+  return async (ctx: T) => {
     try {
       return await handler(ctx);
     } catch (err) {

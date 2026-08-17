@@ -12,7 +12,6 @@ import { parseBody } from "@/lib/api/parse";
 import { enforceRateLimit } from "@/lib/api/rate-limit";
 import { verifyPassword } from "@/lib/auth/password";
 import { SESSION_COOKIE, createSession, sessionCookie } from "@/lib/auth/session";
-import type { APIRoute } from "astro";
 
 const bodySchema = z.object({
   email: z.string().trim().toLowerCase().min(1),
@@ -22,8 +21,8 @@ const bodySchema = z.object({
 const WINDOW_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 10;
 
-export const POST: APIRoute = route(async (ctx) => {
-  const request = (ctx as { request: Request }).request;
+export const POST = route(async (ctx: { request: Request }) => {
+  const { request } = ctx;
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
   let body: z.infer<typeof bodySchema>;
   try {

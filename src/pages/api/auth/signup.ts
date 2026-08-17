@@ -12,7 +12,6 @@ import { parseBody } from "@/lib/api/parse";
 import { hashPassword } from "@/lib/auth/password";
 import { createSession, SESSION_COOKIE, sessionCookie } from "@/lib/auth/session";
 import { uuid7 } from "@/db/ids";
-import type { APIRoute } from "astro";
 
 const bodySchema = z.object({
   email: z.string().trim().toLowerCase().email(),
@@ -20,8 +19,8 @@ const bodySchema = z.object({
   password: z.string().min(8).max(200),
 });
 
-export const POST: APIRoute = route(async (ctx) => {
-  const request = (ctx as { request: Request }).request;
+export const POST = route(async (ctx: { request: Request }) => {
+  const { request } = ctx;
   const body = await parseBody(request, bodySchema);
 
   const db = currentDb();

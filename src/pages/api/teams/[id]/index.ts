@@ -9,7 +9,6 @@ import { currentDb } from "@/lib/api/db";
 import { HttpError, json, route } from "@/lib/api/errors";
 import { requireWorkspace } from "@/lib/api/guards";
 import { parseBodyOptional } from "@/lib/api/parse";
-import type { APIRoute } from "astro";
 
 type Ctx = { request: Request; params: Record<string, string | undefined> };
 
@@ -19,8 +18,7 @@ const patchSchema = z.object({
   timezone: z.string().trim().max(64).nullable().optional(),
 });
 
-export const GET: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const GET = route(async (ctx: Ctx) => {
   const team = currentDb().select().from(teams).where(eq(teams.id, ctx.params.id as string)).get();
   if (!team) throw new HttpError("NOT_FOUND", "Team not found");
   const { member } = requireWorkspace(ctx.request, team.workspaceId);
@@ -36,8 +34,7 @@ export const GET: APIRoute = route(async (raw) => {
   return json({ team });
 });
 
-export const PATCH: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const PATCH = route(async (ctx: Ctx) => {
   const team = currentDb().select().from(teams).where(eq(teams.id, ctx.params.id as string)).get();
   if (!team) throw new HttpError("NOT_FOUND", "Team not found");
   requireWorkspace(ctx.request, team.workspaceId, "admin");
@@ -52,8 +49,7 @@ export const PATCH: APIRoute = route(async (raw) => {
   return json({ team: currentDb().select().from(teams).where(eq(teams.id, team.id)).get() });
 });
 
-export const DELETE: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const DELETE = route(async (ctx: Ctx) => {
   const db = currentDb();
   const team = db.select().from(teams).where(eq(teams.id, ctx.params.id as string)).get();
   if (!team) throw new HttpError("NOT_FOUND", "Team not found");

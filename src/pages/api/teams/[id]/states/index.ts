@@ -12,7 +12,6 @@ import { requireWorkspace } from "@/lib/api/guards";
 import { parseBody, parseBodyOptional } from "@/lib/api/parse";
 import { uuid7 } from "@/db/ids";
 import { generateKeyBetween } from "@/db/positions";
-import type { APIRoute } from "astro";
 
 type Ctx = { request: Request; params: Record<string, string | undefined> };
 
@@ -37,8 +36,7 @@ function loadTeam(request: Request, teamId: string | undefined, minRole?: "admin
   return team;
 }
 
-export const GET: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const GET = route(async (ctx: Ctx) => {
   loadTeam(ctx.request, ctx.params.id);
   const rows = currentDb()
     .select()
@@ -49,8 +47,7 @@ export const GET: APIRoute = route(async (raw) => {
   return json({ data: rows, nextCursor: null });
 });
 
-export const POST: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const POST = route(async (ctx: Ctx) => {
   const team = loadTeam(ctx.request, ctx.params.id, "admin");
   const body = await parseBody(ctx.request, createSchema);
 
@@ -85,8 +82,7 @@ export const POST: APIRoute = route(async (raw) => {
   return json({ state: db.select().from(states).where(eq(states.id, id)).get() }, 201);
 });
 
-export const PATCH: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const PATCH = route(async (ctx: Ctx) => {
   const team = loadTeam(ctx.request, ctx.params.id, "admin");
   const body = await parseBodyOptional(ctx.request, reorderSchema);
 

@@ -10,7 +10,6 @@ import { HttpError, json, route } from "@/lib/api/errors";
 import { requireWorkspace } from "@/lib/api/guards";
 import { parseBodyOptional } from "@/lib/api/parse";
 import { isValidSlug } from "@/lib/api/provision";
-import type { APIRoute } from "astro";
 
 type Ctx = { request: Request; params: Record<string, string | undefined> };
 
@@ -22,14 +21,12 @@ const patchSchema = z.object({
 
 const deleteSchema = z.object({ confirm: z.string() });
 
-export const GET: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const GET = route(async (ctx: Ctx) => {
   const { workspace, member } = requireWorkspace(ctx.request, ctx.params.id);
   return json({ workspace, role: member.role });
 });
 
-export const PATCH: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const PATCH = route(async (ctx: Ctx) => {
   const { workspace } = requireWorkspace(ctx.request, ctx.params.id, "admin");
   const body = await parseBodyOptional(ctx.request, patchSchema);
 
@@ -54,8 +51,7 @@ export const PATCH: APIRoute = route(async (raw) => {
   return json({ workspace: updated });
 });
 
-export const DELETE: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const DELETE = route(async (ctx: Ctx) => {
   const { workspace, member } = requireWorkspace(ctx.request, ctx.params.id, "owner");
   if (member.role !== "owner") throw new HttpError("FORBIDDEN", "Owner role required");
   const body = await parseBodyOptional(ctx.request, deleteSchema);

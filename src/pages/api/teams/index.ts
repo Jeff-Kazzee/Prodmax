@@ -12,9 +12,8 @@ import { requireWorkspace } from "@/lib/api/guards";
 import { parseBody } from "@/lib/api/parse";
 import { uuid7 } from "@/db/ids";
 import { generateKeyBetween } from "@/db/positions";
-import type { APIRoute } from "astro";
 
-type Ctx = { request: Request; url?: URL; params: Record<string, string | undefined> };
+type Ctx = { request: Request; url?: URL };
 
 const createSchema = z.object({
   key: z
@@ -32,8 +31,7 @@ function requireWsId(request: Request): string {
   return wsId;
 }
 
-export const GET: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const GET = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
   const { member } = requireWorkspace(ctx.request, wsId);
 
@@ -55,8 +53,7 @@ export const GET: APIRoute = route(async (raw) => {
   return json({ data: visible, nextCursor: null });
 });
 
-export const POST: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const POST = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
   requireWorkspace(ctx.request, wsId, "admin");
   const body = await parseBody(ctx.request, createSchema);

@@ -16,7 +16,6 @@ import { hashInviteToken } from "@/lib/api/invites";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { SESSION_COOKIE, createSession, readSession, sessionCookie } from "@/lib/auth/session";
 import { uuid7 } from "@/db/ids";
-import type { APIRoute } from "astro";
 
 const bodySchema = z.object({
   token: z.string().min(10),
@@ -25,8 +24,8 @@ const bodySchema = z.object({
   password: z.string().min(8).max(200).optional(),
 });
 
-export const POST: APIRoute = route(async (ctx) => {
-  const request = (ctx as { request: Request }).request;
+export const POST = route(async (ctx: { request: Request }) => {
+  const { request } = ctx;
   const body = await parseBody(request, bodySchema);
   const db = currentDb();
 

@@ -10,7 +10,6 @@ import { json, route } from "@/lib/api/errors";
 import { requireSession } from "@/lib/api/guards";
 import { parseBody } from "@/lib/api/parse";
 import { isValidSlug, provisionWorkspace, slugify } from "@/lib/api/provision";
-import type { APIRoute } from "astro";
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -22,8 +21,8 @@ const createSchema = z.object({
   timezone: z.string().trim().min(1).max(64).optional(),
 });
 
-export const GET: APIRoute = route(async (ctx) => {
-  const { user } = requireSession((ctx as { request: Request }).request);
+export const GET = route(async (ctx: { request: Request }) => {
+  const { user } = requireSession(ctx.request);
   const rows = currentDb()
     .select({
       id: workspaces.id,
@@ -40,9 +39,9 @@ export const GET: APIRoute = route(async (ctx) => {
   return json({ data: rows, nextCursor: null });
 });
 
-export const POST: APIRoute = route(async (ctx) => {
-  const { user } = requireSession((ctx as { request: Request }).request);
-  const body = await parseBody((ctx as { request: Request }).request, createSchema);
+export const POST = route(async (ctx: { request: Request }) => {
+  const { user } = requireSession(ctx.request);
+  const body = await parseBody(ctx.request, createSchema);
   const slug = body.slug ?? slugify(body.name);
   if (!isValidSlug(slug)) {
     return json(

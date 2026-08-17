@@ -10,7 +10,6 @@ import { currentDb } from "@/lib/api/db";
 import { HttpError, json, route } from "@/lib/api/errors";
 import { requireWorkspace } from "@/lib/api/guards";
 import { parseBodyOptional } from "@/lib/api/parse";
-import type { APIRoute } from "astro";
 
 type Ctx = { request: Request; params: Record<string, string | undefined> };
 
@@ -33,8 +32,7 @@ function loadLabel(request: Request, labelId: string | undefined, minRole?: "adm
   return label;
 }
 
-export const PATCH: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const PATCH = route(async (ctx: Ctx) => {
   const label = loadLabel(ctx.request, ctx.params.id, "admin");
   const body = await parseBodyOptional(ctx.request, patchSchema);
   const db = currentDb();
@@ -65,8 +63,7 @@ export const PATCH: APIRoute = route(async (raw) => {
   return json({ label: db.select().from(labels).where(eq(labels.id, label.id)).get() });
 });
 
-export const DELETE: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const DELETE = route(async (ctx: Ctx) => {
   const label = loadLabel(ctx.request, ctx.params.id, "admin");
   currentDb().delete(labels).where(eq(labels.id, label.id)).run();
   return json({ ok: true });

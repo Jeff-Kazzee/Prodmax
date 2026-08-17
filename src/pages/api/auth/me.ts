@@ -7,10 +7,9 @@ import { invites, workspaceMembers, workspaces } from "@/db/schema";
 import { currentDb } from "@/lib/api/db";
 import { route, json } from "@/lib/api/errors";
 import { requireSession } from "@/lib/api/guards";
-import type { APIRoute } from "astro";
 
-export const GET: APIRoute = route(async (ctx) => {
-  const request = (ctx as { request: Request }).request;
+export const GET = route(async (ctx: { request: Request }) => {
+  const { request } = ctx;
   const { user } = requireSession(request);
   const db = currentDb();
 

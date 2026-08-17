@@ -17,6 +17,7 @@ afterEach(teardownApiDb);
 interface Env {
   wsId: string;
   ownerToken: string;
+  ownerId: string;
   adminToken: string;
   adminId: string;
   memberToken: string;

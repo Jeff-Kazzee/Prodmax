@@ -10,7 +10,6 @@ import { currentDb } from "@/lib/api/db";
 import { HttpError, json, route } from "@/lib/api/errors";
 import { requireWorkspace } from "@/lib/api/guards";
 import { parseBodyOptional } from "@/lib/api/parse";
-import type { APIRoute } from "astro";
 
 type Ctx = { request: Request; params: Record<string, string | undefined> };
 
@@ -36,8 +35,7 @@ function loadState(request: Request, stateId: string | undefined, minRole?: "adm
   return { state, team };
 }
 
-export const PATCH: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const PATCH = route(async (ctx: Ctx) => {
   const { state } = loadState(ctx.request, ctx.params.id, "admin");
   const body = await parseBodyOptional(ctx.request, patchSchema);
 
@@ -62,8 +60,7 @@ export const PATCH: APIRoute = route(async (raw) => {
   return json({ state: db.select().from(states).where(eq(states.id, state.id)).get() });
 });
 
-export const DELETE: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const DELETE = route(async (ctx: Ctx) => {
   const { state, team } = loadState(ctx.request, ctx.params.id, "admin");
   const db = currentDb();
   const siblings = db.select({ id: states.id }).from(states).where(eq(states.teamId, state.teamId)).all();
@@ -71,7 +68,8 @@ export const DELETE: APIRoute = route(async (raw) => {
     throw new HttpError("CONFLICT", "Cannot delete the team's last state");
   }
   const remaining = siblings.filter((s) => s.id !== state.id).map((s) => s.id);
-  let fallbackId = remaining.includes(team.defaultStateId) ? team.defaultStateId : remaining[0];
+  let fallbackId: string =
+    team.defaultStateId !== null && remaining.includes(team.defaultStateId) ? team.defaultStateId : remaining[0];
   const teamPatch: Partial<typeof teams.$inferInsert> = {};
   if (team.defaultStateId === state.id) teamPatch.defaultStateId = fallbackId;
   if (team.triageStateId === state.id) {

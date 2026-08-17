@@ -8,12 +8,10 @@ import { currentDb } from "@/lib/api/db";
 import { json, route } from "@/lib/api/errors";
 import { requireWorkspace } from "@/lib/api/guards";
 import { paginate } from "@/lib/api/paginate";
-import type { APIRoute } from "astro";
 
 type Ctx = { request: Request; params: Record<string, string | undefined> };
 
-export const GET: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const GET = route(async (ctx: Ctx) => {
   const { member } = requireWorkspace(ctx.request, ctx.params.id);
   const url = new URL(ctx.request.url);
 

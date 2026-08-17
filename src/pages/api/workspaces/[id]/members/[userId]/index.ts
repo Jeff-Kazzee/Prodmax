@@ -11,7 +11,6 @@ import { currentDb } from "@/lib/api/db";
 import { HttpError, json, route } from "@/lib/api/errors";
 import { requireWorkspace } from "@/lib/api/guards";
 import { parseBodyOptional } from "@/lib/api/parse";
-import type { APIRoute } from "astro";
 
 type Ctx = { request: Request; params: Record<string, string | undefined> };
 
@@ -35,8 +34,7 @@ function ownerCount(wsId: string): number {
     .all().length;
 }
 
-export const PATCH: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const PATCH = route(async (ctx: Ctx) => {
   const { member: actor } = requireWorkspace(ctx.request, ctx.params.id, "admin");
   const body = await parseBodyOptional(ctx.request, patchSchema);
   const target = loadTarget(ctx.params.id as string, ctx.params.userId as string);
@@ -65,8 +63,7 @@ export const PATCH: APIRoute = route(async (raw) => {
   return json({ member: updated });
 });
 
-export const DELETE: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const DELETE = route(async (ctx: Ctx) => {
   const { ctx: sessionCtx, member: actor } = requireWorkspace(ctx.request, ctx.params.id, "admin");
   const target = loadTarget(ctx.params.id as string, ctx.params.userId as string);
   if (!target) throw new HttpError("NOT_FOUND", "Member not found");

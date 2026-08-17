@@ -11,7 +11,6 @@ import { HttpError, json, route } from "@/lib/api/errors";
 import { requireWorkspace } from "@/lib/api/guards";
 import { parseBody } from "@/lib/api/parse";
 import { uuid7 } from "@/db/ids";
-import type { APIRoute } from "astro";
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(50),
@@ -30,8 +29,7 @@ function requireWsId(request: Request): string {
   return wsId;
 }
 
-export const GET: APIRoute = route(async (raw) => {
-  const ctx = raw as { request: Request };
+export const GET = route(async (ctx: { request: Request }) => {
   const wsId = requireWsId(ctx.request);
   requireWorkspace(ctx.request, wsId);
   const teamId = new URL(ctx.request.url).searchParams.get("teamId");
@@ -49,8 +47,7 @@ export const GET: APIRoute = route(async (raw) => {
   return json({ data: rows, nextCursor: null });
 });
 
-export const POST: APIRoute = route(async (raw) => {
-  const ctx = raw as { request: Request };
+export const POST = route(async (ctx: { request: Request }) => {
   const wsId = requireWsId(ctx.request);
   requireWorkspace(ctx.request, wsId, "admin");
   const body = await parseBody(ctx.request, createSchema);

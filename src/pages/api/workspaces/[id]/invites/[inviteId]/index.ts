@@ -4,12 +4,10 @@ import { invites } from "@/db/schema";
 import { currentDb } from "@/lib/api/db";
 import { HttpError, json, route } from "@/lib/api/errors";
 import { requireWorkspace } from "@/lib/api/guards";
-import type { APIRoute } from "astro";
 
 type Ctx = { request: Request; params: Record<string, string | undefined> };
 
-export const DELETE: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const DELETE = route(async (ctx: Ctx) => {
   requireWorkspace(ctx.request, ctx.params.id, "admin");
   const invite = currentDb()
     .select()

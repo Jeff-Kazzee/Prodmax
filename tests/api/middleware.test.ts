@@ -10,7 +10,9 @@ const handler = onRequest as MiddlewareHandler;
 
 async function run(request: Request): Promise<{ res: Response; locals: Record<string, unknown> }> {
   const locals: Record<string, unknown> = {};
-  const res = await handler({ request, locals, url: new URL(request.url) } as never, async () => new Response("next-ok"));
+  // Astro's MiddlewareHandler may return void per its type; our onRequest
+  // always resolves to a Response (it either short-circuits or awaits next()).
+  const res = (await handler({ request, locals, url: new URL(request.url) } as never, async () => new Response("next-ok"))) as Response;
   return { res, locals };
 }
 
@@ -70,10 +72,10 @@ describe("middleware /api/* gate", () => {
   });
 
   it("leaves non-API routes untouched", async () => {
-    const res = await handler(
+    const res = (await handler(
       { request: new Request("http://localhost/some/page"), locals: {}, url: new URL("http://localhost/some/page") } as never,
       async () => new Response("page"),
-    );
+    )) as Response;
     expect(await res.text()).toBe("page");
   });
 });

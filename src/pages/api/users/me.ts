@@ -9,20 +9,19 @@ import { currentDb } from "@/lib/api/db";
 import { json, route } from "@/lib/api/errors";
 import { parseBodyOptional } from "@/lib/api/parse";
 import { requireSession } from "@/lib/api/guards";
-import type { APIRoute } from "astro";
 
 const patchSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
   avatarSeed: z.string().trim().min(1).max(64).optional(),
 });
 
-export const GET: APIRoute = route(async (ctx) => {
-  const { user } = requireSession((ctx as { request: Request }).request);
+export const GET = route(async (ctx: { request: Request }) => {
+  const { user } = requireSession(ctx.request);
   return json({ user });
 });
 
-export const PATCH: APIRoute = route(async (ctx) => {
-  const request = (ctx as { request: Request }).request;
+export const PATCH = route(async (ctx: { request: Request }) => {
+  const { request } = ctx;
   const { user } = requireSession(request);
   const body = await parseBodyOptional(request, patchSchema);
   if (body.name === undefined && body.avatarSeed === undefined) {

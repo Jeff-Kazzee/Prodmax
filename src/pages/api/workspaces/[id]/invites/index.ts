@@ -13,7 +13,6 @@ import { requireWorkspace } from "@/lib/api/guards";
 import { parseBody } from "@/lib/api/parse";
 import { hashInviteToken } from "@/lib/api/invites";
 import { uuid7 } from "@/db/ids";
-import type { APIRoute } from "astro";
 
 type Ctx = { request: Request; params: Record<string, string | undefined> };
 
@@ -25,8 +24,7 @@ const createSchema = z.object({
 
 const EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
-export const GET: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const GET = route(async (ctx: Ctx) => {
   requireWorkspace(ctx.request, ctx.params.id, "admin");
   const rows = currentDb()
     .select({
@@ -52,8 +50,7 @@ export const GET: APIRoute = route(async (raw) => {
   return json({ data: rows, nextCursor: null });
 });
 
-export const POST: APIRoute = route(async (raw) => {
-  const ctx = raw as Ctx;
+export const POST = route(async (ctx: Ctx) => {
   const { ctx: sessionCtx } = requireWorkspace(ctx.request, ctx.params.id, "admin");
   const body = await parseBody(ctx.request, createSchema);
 
