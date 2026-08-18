@@ -25,9 +25,10 @@ agent providers, recorded in architecture §6 and ux-spec §3.7).
    commits (agents commit nothing). Working standalone: commit yourself per
    AGENTS.md conventions (conventional, atomic, one ticket = one or more
    atomic commits on a **feature branch cut from `dev`**). Open a PR into
-   `dev`. Promote `dev` → `prod` after the four gates are green. Then set
-   `status: done`. Never commit directly to `prod` or `dev`. Never commit
-   `data/` or `.env`.
+   `dev` only — never into `prod`. Then set `status: done`. Never commit
+   directly to `prod` or `dev`. Never commit `data/` or `.env`. `prod` is
+   the finished product; promote `dev` → `prod` only when Jeff asks to
+   release.
 7. Blocked? Set `status: blocked`, write why in the ticket, move on. Never
    edit files outside your ticket's `owns:` list — file a "constraint
    amendment needed" note instead (architecture §8 overlap rule).
