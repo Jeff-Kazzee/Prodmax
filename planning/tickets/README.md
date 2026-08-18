@@ -31,24 +31,22 @@ agent providers, recorded in architecture §6 and ux-spec §3.7).
 
 Status legend: `open` → `claimed` → `in-review` → `done` | `blocked`.
 
-## Shell rules (CRITICAL — path contains an apostrophe)
+## Shell rules
 
-Work from `C:\Users\jeffk\Jeff's Agent Workshop\dev\projects\Prodmax`. Quote
-paths in shell commands.
+The project lives at `C:\Users\jeffk\big-projects\Prodmax` (moved here
+2026-08-18 from the apostrophe-bearing `…/Jeff's Agent Workshop/…` path —
+the subst/patch workaround class is now historical). The mitigation scripts
+remain as dormant no-ops (`scripts/with-subst.mjs` passes through on
+apostrophe-free paths; `scripts/patch-astro.mjs` exits silently) — keep them.
 
-- NEVER `cd` onto a subst drive (`Y:`, `V:`, …) in a persistent shell — when
-  the wrapper removes the mapping, every later command dies with ENOENT for
-  the rest of the session, subagents included.
-- `npm run dev` / `build` / `preview` are wrapped by `scripts/with-subst.mjs`
-  (stable subst letter, reuse-aware). Never invoke `astro` directly.
 - Dev servers bind 4321, or 4322+ if taken — read the `Local:` log line
   before assuming the port. Kill servers by exact PID only
   (`netstat -ano | grep ":4321" | grep LISTEN` → `taskkill //PID <pid> //F`);
   never broad-kill node.
-- If dev mode misbehaves after a crash: remove stale subst mappings
-  (`subst` to list; `subst Y: //D` etc. — only ones pointing at this repo's
-  path), clear `.astro/` + `node_modules/.vite`, restart. See
-  `planning/build-state.md` → "Dev-mode hydration fix".
+- If dev misbehaves after a crash or a directory move, clear `.astro/` and
+  `node_modules/.vite` (both cache absolute paths) and restart.
+- `resolve.preserveSymlinks: true` in astro.config.mjs is harmless here; it
+  was required when the dev root was a subst drive.
 
 ## Anti-stall rules (violations get agents killed at 10-min inactivity)
 

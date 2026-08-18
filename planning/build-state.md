@@ -1,8 +1,10 @@
-# Prodmax Build State — HANDOFF (2026-08-17, after M2)
+# Prodmax Build State — HANDOFF (2026-08-17 after M2; moved + Cursor handoff 2026-08-18)
 
 Read this first in a fresh session, then `planning/plans/build-prodmax.md` and `AGENTS.md`.
-Work from the real path `C:\Users\jeffk\Jeff's Agent Workshop\dev\projects\Prodmax` —
-NEVER `cd` onto a subst drive (Y:) in the main shell; see Shell rules below.
+Project root: `C:\Users\jeffk\big-projects\Prodmax` (moved 2026-08-18 from the
+apostrophe-bearing `…/Jeff's Agent Workshop/…` path — all four gates re-verified
+green at the new location; the subst workaround class below is now historical,
+the scripts remain as dormant no-ops).
 
 ## Phase status
 
@@ -69,9 +71,9 @@ noted in the tickets README. The orchestrator verifies all four gates +
 commits after each ticket; standalone agents may commit per the README
 protocol.
 
-## Shell rules (hard-won — read twice)
+## Shell rules (hard-won — historical since the 2026-08-18 move to big-projects)
 
-The workspace path contains an apostrophe (Jeff's), which breaks Astro codegen that single-quotes paths. Mitigations: `scripts/with-subst.mjs` (dev/build/preview wrap on a subst drive) + `scripts/patch-astro.mjs` (postinstall, self-tested, idempotent — verified end-to-end 2026-08-17).
+The ORIGINAL workspace path contained an apostrophe (Jeff's), which broke Astro codegen that single-quotes paths. Mitigations were: `scripts/with-subst.mjs` (dev/build/preview wrap on a subst drive) + `scripts/patch-astro.mjs` (postinstall, self-tested, idempotent — verified end-to-end 2026-08-17). Both remain in the repo as dormant no-ops for apostrophe-free paths. The records below explain why they exist — read before ever moving the project back onto an apostrophe-bearing path.
 
 **Dev-mode hydration fix (2026-08-18)**: dev servers must run with `resolve.preserveSymlinks: true` (now in astro.config.mjs). Without it Vite realpaths module ids to the real `C:/…Jeff's Agent Workshop/…` spelling while the fs root is the subst drive, and those `/@fs/C:/…` URLs (spaces + apostrophe) fall through the `[...slug]` catch-all as HTML — the island never hydrates in dev (production preview was never affected; e2e always ran against preview, which is why this hid). The wrapper now also REUSES an existing subst mapping for the same dir (stable drive letter → caches stay valid) and only unmaps letters it created — hard `taskkill //F` kills used to strand mappings (V:/Y:/Z: all pointed at the same dir; different letters per run poisoned `.astro/` and `node_modules/.vite`). Known benign: one swallowed `ERR_INVALID_URL_SCHEME` rejection at dev boot (Astro watcher does `new URL(component, config.root)` while root is a plain `Y:/…` string); no functional impact — routes, HMR, hydration all work. Fix later via patch-astro if the noise bothers anyone.
 
