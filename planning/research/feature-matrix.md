@@ -1,6 +1,6 @@
 # Prodmax Feature Matrix — Canonical Scope Contract
 
-**Doc owner:** consolidation agent | **Date:** 2026-08-16 | **Status:** APPROVED SCOPE — gates Phase 2 (UX), Phase 3 (build M0–M10), Phase 4 (verification)
+**Doc owner:** consolidation agent | **Date:** 2026-08-18 | **Status:** APPROVED SCOPE — gates Phase 2 (UX), Phase 3 (build M0–M10), Phase 4 (verification)
 **Inputs:** `linear-deep-dive.md` (R1), `notion-deep-dive.md` (R2), `ai-native-patterns.md` (R3), locked owner stack decisions.
 **Companion docs:** `planning/architecture.md` (system design), `planning/qa/acceptance-tests.md` (AT-NNN tests this matrix points at).
 
@@ -161,7 +161,7 @@
 | FM-060 | Created-vs-completed: weekly/monthly created vs completed counts, backlog net-trend line | Must | Linear created-vs-completed | Parity only | AT-070 |
 | FM-061 | Breakdowns & export: segment any chart by label, assignee, priority, state category, project, milestone; bar-hover breakdowns; click-through to filtered issue list; CSV export of any chart's data | Must | Linear insights interactivity + CSV export | Parity only | AT-071, AT-072 |
 
-## R. AI Features (keyless-first: every feature fully functional offline via the deterministic engine; providers optional via env)
+## R. AI Features (keyless-first: every feature fully functional offline via the deterministic engine; local CLI agents optional; HTTP providers optional via env)
 
 | ID | Feature | Tier | Parity source | Prodmax improvement | AT |
 |---|---|---|---|---|---|
@@ -176,7 +176,7 @@
 | FM-070 | Meeting/notes → issues: paste notes (or local transcription later); date/person/task regex + cue-verb patterns → action-item drafts in a review tray; "create all" or itemized approve; entities validated against member/project lists | Should | Notion AI meeting notes; Reflect action-item extraction | Deterministic extraction; unknown entities become unlinked text, never silently created (R3 hallucination guard) | AT-083 |
 | FM-071 | Related-issue clustering: agglomerative clustering over TF-IDF of open issues; cluster cards with members + cohesion score + shared-term "common requirements" draft; drag to accept/reject membership; never auto-creates projects | Should | Linear Agent "group related issues" (its signature demo) | Local + editable; cohesion threshold prevents forced groupings | AT-082 |
 | FM-072 | NL automation builder ("when X then Y"): constrained grammar → trigger/action DSL with validation + mandatory dry-run against recent events before enabling; loop detection + run caps | Stretch | Notion database automations; Linear agent automations | Deferred — build only after M8's event bus is proven; Notion's 3-second multi-trigger failure window documented as a trap to avoid | (none — Stretch) |
-| FM-073 | Provider-routed chat ("Deep Ask"): chat surface powered by features FM-062–FM-071 locally; if an LLM provider is configured via env (BYOK), same interface routes to it with tool allowlist, token budgets, human confirmation for writes; every answer labeled local vs provider+model | Should | Linear Agent chat; Notion AI chat; Raycast BYOK | The deterministic engine is provider #0 — features never branch on engine availability; graceful degradation instead of error (R3 §7); BYOK cost control mirrors Raycast's praised pattern | AT-083 |
+| FM-073 | Persistent AI dock + local CLI agent chat: right-side dock (`Cmd+J`) sharing threads with `/ai/ask`; providers `local` (deterministic #0), `claude-code` (headless stream-json + `--resume`), `codex` (same seam); chat + propose (validated `{method,path,body,label}` Apply cards); human applies via the same REST endpoints; degrade to local when CLI missing | Must | Linear Agent chat; Notion AI chat; Claude Code / Codex CLIs | Dock is a grid column (reflows) not a modal; CLIs use the user's own auth, never M9 API keys; proposals never server-replay stored requests; engine label on every turn (R3 §7/§9) | AT-120, AT-121, AT-122, AT-123, AT-124, AT-125, AT-126 |
 
 ## S. API, Integrations & Webhooks
 
@@ -233,8 +233,8 @@
 
 | Tier | Count |
 |---|---|
-| Must | 71 |
-| Should | 17 |
+| Must | 72 |
+| Should | 16 |
 | Stretch | 2 |
 | **Total** | **90** |
 
@@ -259,14 +259,14 @@
 | O. Notifications | 1 | 1 | 0 | 2 |
 | P. Activity | 1 | 0 | 0 | 1 |
 | Q. Insights | 4 | 0 | 0 | 4 |
-| R. AI Features | 6 | 5 | 1 | 12 |
+| R. AI Features | 7 | 4 | 1 | 12 |
 | S. API, Integrations & Webhooks | 3 | 0 | 1 | 4 |
 | T. Import / Export | 1 | 1 | 0 | 2 |
 | U. Permissions & Isolation | 2 | 0 | 0 | 2 |
 | V. Settings & Admin | 3 | 0 | 0 | 3 |
 | W. Theming & Visual | 3 | 0 | 0 | 3 |
 | X. Realtime & Presence | 3 | 0 | 0 | 3 |
-| **Total** | **71** | **17** | **2** | **90** |
+| **Total** | **72** | **16** | **2** | **90** |
 
 ### Explicitly out of scope for v1 (roadmap notes, not commitments)
 

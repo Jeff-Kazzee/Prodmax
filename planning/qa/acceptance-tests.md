@@ -1,6 +1,6 @@
 # Prodmax Acceptance Tests — Phase 4 Exit Gate
 
-**Doc owner:** consolidation agent | **Date:** 2026-08-16 | **Total tests:** 119 (AT-001 … AT-119)
+**Doc owner:** consolidation agent | **Date:** 2026-08-18 | **Total tests:** 126 (AT-001 … AT-126)
 **Rule:** the build is DONE only when every test here is PASS, `npm run check` / `npm test` / `npm run e2e` / `npm run build` are clean, and `planning/qa/defect-log.md` shows zero open material defects.
 
 **Test fields**
@@ -884,6 +884,59 @@
 - **Automated:** vitest integration (WAL durability) + manual-browser (restart drill).
 - **Severity:** blocker
 
+## Group 22 — AI dock & local CLI agents (AT-120 … AT-126)
+
+Amendment 2026-08-18 (FM-073 Must). Uses a **mocked CLI** fixture that speaks `stream-json` — never the real `claude`/`codex` binaries in CI.
+
+### AT-120 — Dock open/close + persist
+- **Preconditions:** logged in as `member@prodmax.test`; viewport ≥1024.
+- **Steps:** 1. Click SB-13 AI (or press `Cmd+J`). 2. Drag AD-08 to ~480px. 3. Reload. 4. Press `Cmd+J` twice. 5. Open an issue panel (`Enter` on a row) with the dock still open.
+- **Expected:** dock opens as a right grid column (content reflows); width 320–560 (default 400); open state + width persist across reload; second `Cmd+J` closes; issue panel overlays content and does **not** close the dock; `<768` would be a full-screen sheet (spot-check or dedicated viewport).
+- **Automated:** playwright e2e `ai-dock.spec.ts`.
+- **Severity:** blocker
+
+### AT-121 — Claude Code round-trip with mocked CLI
+- **Preconditions:** workspace `chatProvider=claude-code`; mock CLI on `cliPath` emits stream-json deltas then a final result; real CLI not required.
+- **Steps:** 1. Open dock. 2. Send "list my open bugs". 3. Wait for `done`.
+- **Expected:** `POST .../messages` is `text/event-stream` with `chat-delta` then `done`; assistant markdown appears incrementally; `ai_runs.engine` is `provider:claude-code:<model>`; M8 EventSource is **not** used for these events.
+- **Automated:** vitest integration (mock binary) + playwright e2e.
+- **Severity:** blocker
+
+### AT-122 — Proposal → apply → undo
+- **Preconditions:** AT-121 mock configured to return one proposal `{method:'POST', path:'/api/issues', body:{title:'Dock-created'}, label:'Create issue'}`.
+- **Steps:** 1. Send a turn that yields the proposal. 2. Click **Apply** on AD-07. 3. Click **Undo** on the toast.
+- **Expected:** Apply hits `POST /api/issues` under the user session (same auth as a human create); issue appears; no server-side replay of a stored raw request; Undo restores (issue gone / compensating action); proposal card shows applied/undone state.
+- **Automated:** vitest integration + playwright e2e.
+- **Severity:** blocker
+
+### AT-123 — Provider picker including not-installed
+- **Preconditions:** Settings → AI (R-47); `codex` binary absent; `claude-code` mock present.
+- **Steps:** 1. Open ST-90. 2. Select `codex`. 3. Select `claude-code`. 4. Select `local`.
+- **Expected:** `codex` shows "Codex not installed" and does not crash; `claude-code` shows healthy; `local` always available; PATCH `/api/settings/ai` persists `chatProvider` / `model` / `cliPath`.
+- **Automated:** playwright e2e + vitest integration (missing binary).
+- **Severity:** major
+
+### AT-124 — Degradation to local engine labeled
+- **Preconditions:** `chatProvider=claude-code`; mock CLI exits non-zero / missing.
+- **Steps:** 1. Send a dock message.
+- **Expected:** turn completes on provider #0; engine badge reads `Local engine` with a short reason; no blank dock; `ai_runs.engine` is `local-deterministic`.
+- **Automated:** vitest integration + playwright e2e.
+- **Severity:** blocker
+
+### AT-125 — Streaming deltas, Stop, resumable session
+- **Preconditions:** mock CLI streams ≥5 `chat-delta` events over >500ms and accepts `--resume`.
+- **Steps:** 1. Send a message. 2. Click AD-06 Stop mid-stream. 3. Send a follow-up in the same conversation.
+- **Expected:** partial assistant text remains; Stop is hidden after abort; follow-up uses `cli_session_id` (`--resume`); conversation survives reload (GET `:id`).
+- **Automated:** vitest integration (resume flag) + playwright e2e.
+- **Severity:** blocker
+
+### AT-126 — Context chip + ai_run input_hash
+- **Preconditions:** issue `PRO-123` open (panel or page).
+- **Steps:** 1. Open dock. 2. Confirm AD-04 reads `About: PRO-123`. 3. Send "summarize this". 4. Open the matching `ai_runs` row.
+- **Expected:** context chip matches the current entity or view; `ai_runs.input_hash` is SHA-256 of the canonicalized payload that includes that context; clearing the chip unscopes the next turn (hash changes).
+- **Automated:** vitest integration (hash) + playwright e2e.
+- **Severity:** major
+
 ---
 
 ## Coverage Matrix — every Must feature (FM) → acceptance tests (AT)
@@ -964,7 +1017,7 @@ Stretch-tier features (FM-072, FM-077) intentionally have no ATs. Should-tier fe
 | FM-070 | AI: meeting extraction | Should | AT-083 |
 | FM-071 | AI: clustering | Should | AT-082 |
 | FM-072 | AI: NL automation builder | Stretch | — |
-| FM-073 | AI: provider chat | Should | AT-083 |
+| FM-073 | AI: dock + CLI agents | Must | AT-120, AT-121, AT-122, AT-123, AT-124, AT-125, AT-126 |
 | FM-074 | API keys | Must | AT-090, AT-105 |
 | FM-075 | REST API v1 | Must | AT-091, AT-092 |
 | FM-076 | Webhooks | Must | AT-093, AT-094 |
@@ -983,7 +1036,7 @@ Stretch-tier features (FM-072, FM-077) intentionally have no ATs. Should-tier fe
 | FM-089 | Presence | Must | AT-089 |
 | FM-090 | Optimistic UI & conflicts | Must | AT-086, AT-088 |
 
-**Matrix proof:** all 71 Must features have ≥1 AT; every group's tests map back to at least one Must (or documented Should) feature; AT-057/058/063/067/041/044/046/050/081/082/083 exercise Should-tier scope beyond the Must core.
+**Matrix proof:** all 72 Must features have ≥1 AT; every group's tests map back to at least one Must (or documented Should) feature; AT-057/058/063/067/041/044/046/050/081/082/083 exercise Should-tier scope beyond the Must core.
 
 ## Test counts by group
 
@@ -1010,6 +1063,7 @@ Stretch-tier features (FM-072, FM-077) intentionally have no ATs. Should-tier fe
 | Accessibility | 4 | AT-106…109 |
 | Visual & Responsive | 3 | AT-110…112 |
 | Edge Cases | 7 | AT-113…119 |
-| **Total** | **119** | |
+| AI dock & local CLI agents | 7 | AT-120…126 |
+| **Total** | **126** | |
 
-**Severity distribution:** blocker 90 · major 28 · minor 1 (counted from individual tests above).
+**Severity distribution:** blocker 95 · major 30 · minor 1 (counted from individual tests above).
