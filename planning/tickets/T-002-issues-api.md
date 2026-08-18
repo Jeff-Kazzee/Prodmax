@@ -1,8 +1,8 @@
 # T-002 — M3a Issues API + services
 
-status: open
+status: done
 module: M3 issues engine
-assignee: —
+assignee: Cursor Grok 4.6 — 2026-08-18
 owns: src/pages/api/issues/**, src/pages/api/comments/**, src/pages/api/views/**, src/pages/api/undo/**, src/lib/services/issues*, src/lib/services/comments*, src/lib/services/views*, src/lib/validation/issues*, src/lib/validation/views*, tests/api/issues*, tests/api/views*
 depends-on: —
 
@@ -50,3 +50,10 @@ inverse + blocker-resolution downgrade, bulk + undo, history ledger with
 3-min grace fold, description version snapshots, views CRUD + favorite +
 filter compile (field/op/value + and/or/not depth 3 + injection attempt
 rejected). All four gates green.
+
+## Work log (2026-08-18)
+
+- Files: `src/lib/validation/{issues,views}.ts`; `src/lib/services/{issues,issues-*,comments,views}.ts`; `src/pages/api/{issues,comments,views,undo}/**`; `tests/api/{issues,issues-more,views}.test.ts`.
+- Tests: +10 API cases (CRUD/409/PRO-1…2, move-team+redirect, blocking inverse + resolve→related, bulk+undo, 3-min history fold + description coalesce, comments mentions, views+favorite, filter depth-3 + injection rejected). FTS insert trigger verified on create.
+- Gates: `npm run check` 0 errors / 0 warnings / 6 pre-existing hints; `npm test` 95/95; `npm run build` clean; `npm run e2e` 6/6.
+- Deviations: no drizzle table for undo tokens (schema owned by M1). Runtime `CREATE TABLE IF NOT EXISTS undo_tokens` in the bulk service. Event bus still a no-op choke-point (`recordIssueMutation`) for T-016.

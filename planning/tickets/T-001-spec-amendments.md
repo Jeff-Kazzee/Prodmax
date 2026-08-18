@@ -1,6 +1,6 @@
 # T-001 — Phase A spec amendments (AI dock + agent providers)
 
-status: in-review
+status: done
 module: planning docs
 assignee: Cursor Grok 4.6 — 2026-08-18
 owns: planning/architecture.md, planning/design/ux-spec.md, planning/research/feature-matrix.md, planning/qa/acceptance-tests.md, planning/build-state.md
