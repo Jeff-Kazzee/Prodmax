@@ -1,17 +1,16 @@
-# Prodmax Build State — HANDOFF (2026-08-17 after M2; moved + Cursor handoff 2026-08-18)
+# Prodmax Build State — HANDOFF (updated 2026-08-18 after T-002)
 
-Read this first in a fresh session, then `planning/plans/build-prodmax.md` and `AGENTS.md`.
-Project root: `C:\Users\jeffk\big-projects\Prodmax` (moved 2026-08-18 from the
-apostrophe-bearing `…/Jeff's Agent Workshop/…` path — all four gates re-verified
-green at the new location; the subst workaround class below is now historical,
-the scripts remain as dormant no-ops).
+Read `planning/handoffs/2026-08-18-t003-ready.md` in a fresh session, then
+`AGENTS.md` and `planning/tickets/README.md`.
+Project root: `C:\Users\jeffk\big-projects\Prodmax`. GitHub default is `dev`.
+Next ticket: **T-003** (issue views UI).
 
 ## T-001 amendment (2026-08-18)
 
 Binding docs now include the persistent AI chat dock and local CLI agent
 providers (`claude-code` first, `codex` seam). Deterministic engine stays
 provider #0. Code is **not** in this amendment — implement in T-013
-(backend) and T-014 (dock UI). Next ticket: T-002 (M3a Issues API).
+(backend) and T-014 (dock UI). Landed. T-002 issues API also landed.
 
 ## Phase status
 
@@ -19,12 +18,14 @@ provider #0. Code is **not** in this amendment — implement in T-013
 |---|---|
 | 1 Research | ✅ planning/research/ + architecture.md + acceptance-tests.md (AT-001…126; T-001 amendment 2026-08-18) |
 | 2 UX/Design | ✅ ux-spec.md + design-system.md (AI dock §3.7 + `Cmd+J` in T-001) |
-| 3 Build | M0 ✅ 9a6e75b · M1a ✅ 4e1eb47 · M1b ✅ 7dde56c · patch-astro ✅ 020a998 · M1b type-debt fix ✅ 0333f15 · **M2 ✅ f3c881b** · M3–M10 pending |
+| 3 Build | M0 ✅ · M1a ✅ · M1b ✅ · M2 ✅ f3c881b · **M3a issues API ✅** (`effe2b7` + undo-token follow-up on `dev`) · M3b–M10 pending |
 | 4 Verify | Pending — drive with chrome-devtools MCP + browser agents against AT-001…126 |
 
 ## Gate status at handoff (all green)
 
-`npm run check` 0 errors/0 warnings · `npm test` 85/85 (18 files) · `npm run build` clean · `npm run e2e` 6/6 (smoke + shell specs). Demo login `demo@prodmax.dev` / `prodmax-demo`.
+`npm run check` 0 errors · `npm test` 96/96 · `npm run build` clean · `npm run e2e` 6/6.
+Demo login `demo@prodmax.dev` / `prodmax-demo`. Last full gate run: T-002
+undo-token follow-up on `dev`.
 
 ## Commits (repo is its own git)
 
@@ -55,28 +56,25 @@ Feature work lands on `feat/*` or `fix/*` cut from `dev`, then PRs into `dev`.
 
 ## Recovery checklist for the next session
 
-1. `npm test` → 85 passing · `npm run check` → 0 errors (fast confidence)
+1. `npm test` → 96 passing · `npm run check` → 0 errors (fast confidence)
 2. Start dev: `npm run dev` (background), check "Local:" port, curl `/api/health`
-3. Continue with M3.
+3. Claim T-003 on a feature branch from `dev`. Pickup:
+   `planning/handoffs/2026-08-18-t003-ready.md`.
 
-## Handoff note (2026-08-18 → Cursor)
+## Handoff note (2026-08-18)
 
-Build handed to Cursor with ALL 21 tickets `open` (a T-002 agent was started
-and stopped before writing anything — no in-flight work, tree clean). Every
-session — Cursor, ZCode, or otherwise — follows `planning/tickets/README.md`.
-Dev server stopped and subst mappings cleaned (the wrapper removes what it
-creates; a leftover mapping for our path is safe — the wrapper reuses it).
-GitHub remote: `origin/dev` (default) and `origin/prod`. Feature PRs target
-`dev` only. `prod` is the finished product — promote only when releasing.
-Do not land work on `main`.
-Full agent handoff doc: `planning/handoffs/2026-08-18-agent-handoff.md`.
+T-001 and T-002 are `done`. Next: T-003. Tree clean; no in-flight ticket.
+Every session follows `planning/tickets/README.md`. GitHub default is `dev`.
+Feature PRs target `dev` only. Promote `dev` → `prod` only when Jeff asks
+to release. Do not land work on `main`.
+Pickup brief: `planning/handoffs/2026-08-18-t003-ready.md`.
 
 ## Next modules (one agent each, exclusive ownership per architecture §8)
 
 **The work queue now lives in `planning/tickets/` (T-001…T-021)** — read
 `planning/tickets/README.md` for the claim/verify protocol; each ticket is a
-self-contained brief (owns/depends-on/deliverables/acceptance). T-001 spec
-amendments landed 2026-08-18 (docs). Order after that: T-002..T-004 M3 issues →
+self-contained brief (owns/depends-on/deliverables/acceptance). T-001 and
+T-002 landed. Next: T-003. Remaining order: T-003..T-004 M3 issues UI →
 T-005/T-006 M4 → T-007..T-010 M5 docs → T-011/T-012 M6a deterministic AI →
 T-013/T-014 M6b agent chat → T-015 M7 → T-016/T-017 M8 realtime → T-018 M9 →
 T-019 M10 → T-020 verification sweep → T-021 polish. Parallel-safe chains
