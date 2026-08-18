@@ -66,7 +66,7 @@ at ≤6 logins.
 
 | Ticket | Title | Status |
 |---|---|---|
-| T-001 | Phase A spec amendments (AI dock + agent providers) | open |
+| T-001 | Phase A spec amendments (AI dock + agent providers) | in-review |
 | T-002 | M3a Issues API + services | open |
 | T-003 | M3b Issue views UI (list/board/table/filter/views) | open |
 | T-004 | M3c Issue panel + new-issue modal + triage | open |

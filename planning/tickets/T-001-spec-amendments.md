@@ -1,8 +1,8 @@
 # T-001 — Phase A spec amendments (AI dock + agent providers)
 
-status: open
+status: in-review
 module: planning docs
-assignee: —
+assignee: Cursor Grok 4.6 — 2026-08-18
 owns: planning/architecture.md, planning/design/ux-spec.md, planning/research/feature-matrix.md, planning/qa/acceptance-tests.md, planning/build-state.md
 depends-on: —
 
@@ -66,3 +66,10 @@ provider #0. Code changes happen in T-013/T-014 — this ticket is docs only.
 Four gates unaffected (docs only) but still run `npm run check` (markdown
 inside repo, ensure no code drift). Diff reviewed by orchestrator before
 commit.
+
+## Work log (2026-08-18)
+
+- Files: `planning/architecture.md` (§2.9 agent tables, §3.8 conversation API + `/api/settings/ai`, §6.5 CLI providers, §8 M6/M10 `settings/ai*` exception), `planning/design/ux-spec.md` (SB-13 toggle, §3.7 AD-01..08, `Cmd+J`, §4.22 share threads, ST-90 not-installed), `planning/research/feature-matrix.md` (FM-073 Must; 72/16/2), `planning/qa/acceptance-tests.md` (Group 22 AT-120…126; total 126), `planning/build-state.md` (amendment note → T-002).
+- Tests added: none (docs). Gates: `npm run check` 0 errors / 0 warnings / 6 pre-existing hints.
+- Deviations: none. Not committed (await orchestrator / explicit commit ask).
+

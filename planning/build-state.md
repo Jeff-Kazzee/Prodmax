@@ -6,14 +6,21 @@ apostrophe-bearing `…/Jeff's Agent Workshop/…` path — all four gates re-ve
 green at the new location; the subst workaround class below is now historical,
 the scripts remain as dormant no-ops).
 
+## T-001 amendment (2026-08-18)
+
+Binding docs now include the persistent AI chat dock and local CLI agent
+providers (`claude-code` first, `codex` seam). Deterministic engine stays
+provider #0. Code is **not** in this amendment — implement in T-013
+(backend) and T-014 (dock UI). Next ticket: T-002 (M3a Issues API).
+
 ## Phase status
 
 | Phase | Status |
 |---|---|
-| 1 Research | ✅ planning/research/ + architecture.md + acceptance-tests.md (AT-001…119) |
-| 2 UX/Design | ✅ ux-spec.md + design-system.md |
+| 1 Research | ✅ planning/research/ + architecture.md + acceptance-tests.md (AT-001…126; T-001 amendment 2026-08-18) |
+| 2 UX/Design | ✅ ux-spec.md + design-system.md (AI dock §3.7 + `Cmd+J` in T-001) |
 | 3 Build | M0 ✅ 9a6e75b · M1a ✅ 4e1eb47 · M1b ✅ 7dde56c · patch-astro ✅ 020a998 · M1b type-debt fix ✅ 0333f15 · **M2 ✅ f3c881b** · M3–M10 pending |
-| 4 Verify | Pending — drive with chrome-devtools MCP + browser agents against AT-001…119 |
+| 4 Verify | Pending — drive with chrome-devtools MCP + browser agents against AT-001…126 |
 
 ## Gate status at handoff (all green)
 
@@ -62,9 +69,8 @@ Full agent handoff doc: `planning/handoffs/2026-08-18-agent-handoff.md`.
 
 **The work queue now lives in `planning/tickets/` (T-001…T-021)** — read
 `planning/tickets/README.md` for the claim/verify protocol; each ticket is a
-self-contained brief (owns/depends-on/deliverables/acceptance). Order: T-001
-spec amendments (AI dock + claude-code/codex agent providers — approved
-2026-08-18, chat + propose/human-applies) → T-002..T-004 M3 issues →
+self-contained brief (owns/depends-on/deliverables/acceptance). T-001 spec
+amendments landed 2026-08-18 (docs). Order after that: T-002..T-004 M3 issues →
 T-005/T-006 M4 → T-007..T-010 M5 docs → T-011/T-012 M6a deterministic AI →
 T-013/T-014 M6b agent chat → T-015 M7 → T-016/T-017 M8 realtime → T-018 M9 →
 T-019 M10 → T-020 verification sweep → T-021 polish. Parallel-safe chains
