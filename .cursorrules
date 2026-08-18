@@ -1,0 +1,11 @@
+# Prodmax — Cursor rules
+
+Read `AGENTS.md` (project conventions, binding) and `planning/tickets/README.md`
+(work protocol: claim, build, four gates, commit) before doing anything.
+
+The work queue is `planning/tickets/T-001…T-021`. Pick the lowest-numbered
+`status: open` ticket whose `depends-on` are all `done`.
+
+Critical: the workspace path contains an apostrophe — quote paths, never `cd`
+onto subst drives (Y:, V:, …), and use the npm scripts (they wrap astro via
+`scripts/with-subst.mjs`). Details in the tickets README.

@@ -46,6 +46,15 @@ NEVER `cd` onto a subst drive (Y:) in the main shell; see Shell rules below.
 2. Start dev: `npm run dev` (background), check "Local:" port, curl `/api/health`
 3. Continue with M3.
 
+## Handoff note (2026-08-18 → Cursor)
+
+Build handed to Cursor with ALL 21 tickets `open` (a T-002 agent was started
+and stopped before writing anything — no in-flight work, tree clean). Every
+session — Cursor, ZCode, or otherwise — follows `planning/tickets/README.md`.
+Dev server stopped and subst mappings cleaned (the wrapper removes what it
+creates; a leftover mapping for our path is safe — the wrapper reuses it).
+GitHub remote: origin/main — push after each ticket's verification.
+
 ## Next modules (one agent each, exclusive ownership per architecture §8)
 
 **The work queue now lives in `planning/tickets/` (T-001…T-021)** — read
