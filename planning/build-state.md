@@ -56,6 +56,7 @@ session — Cursor, ZCode, or otherwise — follows `planning/tickets/README.md`
 Dev server stopped and subst mappings cleaned (the wrapper removes what it
 creates; a leftover mapping for our path is safe — the wrapper reuses it).
 GitHub remote: origin/main — push after each ticket's verification.
+Full agent handoff doc: `planning/handoffs/2026-08-18-cursor.md`.
 
 ## Next modules (one agent each, exclusive ownership per architecture §8)
 
