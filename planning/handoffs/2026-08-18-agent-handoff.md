@@ -1,4 +1,8 @@
-# Prodmax → Coding Agent Handoff (2026-08-18, rev 3 — model-agnostic)
+# Prodmax → Coding Agent Handoff (2026-08-18, rev 3 — superseded)
+
+> **Superseded.** Pickup brief is now
+> `planning/handoffs/2026-08-18-t003-ready.md`. This file is historical
+> (M2-era, branch `main`, 85 tests). Do not use it as current state.
 
 **For:** any coding agent or AI pair (Cursor, Claude Code, Codex, ZCode,
 Copilot, a human with a terminal — the protocol is the same for all).
