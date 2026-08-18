@@ -67,7 +67,8 @@ session — Cursor, ZCode, or otherwise — follows `planning/tickets/README.md`
 Dev server stopped and subst mappings cleaned (the wrapper removes what it
 creates; a leftover mapping for our path is safe — the wrapper reuses it).
 GitHub remote: `origin/dev` (default) and `origin/prod`. Feature PRs target
-`dev`; promote `dev` → `prod` after the four gates. Do not land work on `main`.
+`dev` only. `prod` is the finished product — promote only when releasing.
+Do not land work on `main`.
 Full agent handoff doc: `planning/handoffs/2026-08-18-agent-handoff.md`.
 
 ## Next modules (one agent each, exclusive ownership per architecture §8)

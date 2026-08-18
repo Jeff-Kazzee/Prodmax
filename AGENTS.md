@@ -53,11 +53,11 @@ All four of check/test/e2e/build must be green before any module is called done.
 - Component naming per design-system (§6); tokens via CSS vars, never raw hex.
 - Commits: conventional, atomic per module or fix (`feat(issues): …`,
   `fix(auth): …`). Never commit `data/` (runtime SQLite file) or `.env`.
-- **Branches:** `prod` is the finished product. `dev` is the integration
-  branch (GitHub default). Every ticket or fix opens a feature branch from
-  `dev` (`feat/t-003-issue-views`, `fix/undo-tokens-schema`, …). Atomic
-  commits land on the feature branch; open a PR into `dev`. Promote `dev` →
-  `prod` only after the four gates are green for that slice. Do not commit
-  directly to `prod` or `dev`. `main` is historical; do not land new work
+- **Branches:** `dev` is the integration branch (GitHub default). Every
+  ticket or fix opens a feature branch from `dev` (`feat/t-003-issue-views`,
+  `fix/undo-tokens-schema`, …). Atomic commits land on the feature branch;
+  open a PR **into `dev` only**. Do not commit directly to `dev` or `prod`.
+  `prod` is the finished product — promote `dev` → `prod` only when Jeff
+  explicitly asks to release. `main` is historical; do not land new work
   there.
 - No placeholder controls: every shipped UI element is wired to real behavior.
