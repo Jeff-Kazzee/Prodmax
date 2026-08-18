@@ -1,8 +1,8 @@
 # T-003 — M3b Issue views UI (list/board/table/filter/views)
 
-status: open
+status: in-review
 module: M3 issues engine
-assignee: —
+assignee: Cursor Grok 2026-08-18
 owns: src/island/features/issues/**, src/components/issues/**, edits to src/island/app/routes.ts + src/island/app.tsx (route swaps only), tests/island/features/issues*
 depends-on: T-002
 
@@ -47,3 +47,31 @@ RTL tests: filter chip CRUD + `?f=` round-trip, grouping/collapse
 persistence, virtualization window math, selection semantics, board drag
 → PATCH payload. All four gates green (e2e may add one spec: open a seeded
 view, edit a filter chip, URL reflects it).
+
+## Work log — 2026-08-18 Cursor Grok
+
+**Files:** `src/island/features/issues/**` (list/board/table, filter bar,
+saved-view chrome, optimistic PATCH client), `src/components/issues/**`
+(priority glyph, state dot, empty), route swaps in `src/island/app.tsx`,
+`tests/island/features/issues*`, `tests/e2e/issues.spec.ts`.
+**M2 additive (constraint):** `apiPatch`/`apiDelete` on
+`src/island/app/api.ts` — T-002 mutations cannot run from GET/POST only.
+Team sidebar R-14 targets were already live; comment only.
+
+**Tests:** filter AST + `?f=` chip CRUD, virtualization window math,
+selection (toggle/range/all), collapse persistence, board drop →
+`PATCH {stateId}`. e2e: login, `/issues`, add priority chip, URL has `?f=`.
+
+**Gates:** `npm run check` 0 errors · `npm test` 114/114 · `npm run build`
+clean · `npm run e2e` 7/7.
+
+**Deviations / follow-ups:**
+- View controls (layout/group/order) render in the issues screen chrome,
+  not M2 topbar SB-11.
+- Favorites star is on the view identity row. SB-03 sidebar slot still
+  absent (M2) — constraint amendment needed to mount a favorites section.
+- New-issue from column "+" and the `?issue=` panel are T-004. AI NL
+  chips (FB-04) wait for T-011. SSE live patches wait for T-016.
+- Board keyboard lift (Space + arrows) and list Alt+arrow reorder are
+  partial vs the full §6 map; pointer drag + bulk cover the ticket
+  acceptance tests.
