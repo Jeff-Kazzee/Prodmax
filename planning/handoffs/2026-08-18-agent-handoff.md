@@ -47,7 +47,8 @@ render an honest "Still on the bench" pending component — swap them per ticket
 - Never commit `data/` (runtime SQLite), `.env`, `test-results/`, `dist/`,
   `.astro/`, `.zcode/` (all gitignored — keep it that way).
 - Update the ticket's status line + work log in the same commit that lands
-  the work. Push to `origin/main` after each ticket.
+  the work. Open a feature branch from `dev`, PR into `dev`, promote to
+  `prod` after the four gates. Do not land work on `main`.
 - DB migrations: generate via `npm run db:generate`, commit with the ticket
   that owns the table; serialize migration commits across parallel tickets.
 

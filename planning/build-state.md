@@ -26,7 +26,11 @@ provider #0. Code is **not** in this amendment — implement in T-013
 
 `npm run check` 0 errors/0 warnings · `npm test` 85/85 (18 files) · `npm run build` clean · `npm run e2e` 6/6 (smoke + shell specs). Demo login `demo@prodmax.dev` / `prodmax-demo`.
 
-## Commits (repo is its own git, branch main)
+## Commits (repo is its own git)
+
+Long-lived branches: `prod` (finished product), `dev` (GitHub default / integration).
+Feature work lands on `feat/*` or `fix/*` cut from `dev`, then PRs into `dev`.
+`main` is historical.
 
 - 9a6e75b M0 scaffold — Astro 5 + React island + Tailwind/shadcn + Drizzle/SQLite + Vitest + Playwright
 - 4e1eb47 M1a schema/FTS5/identifiers/positions/seed (+19 tests)
@@ -62,7 +66,8 @@ and stopped before writing anything — no in-flight work, tree clean). Every
 session — Cursor, ZCode, or otherwise — follows `planning/tickets/README.md`.
 Dev server stopped and subst mappings cleaned (the wrapper removes what it
 creates; a leftover mapping for our path is safe — the wrapper reuses it).
-GitHub remote: origin/main — push after each ticket's verification.
+GitHub remote: `origin/dev` (default) and `origin/prod`. Feature PRs target
+`dev`; promote `dev` → `prod` after the four gates. Do not land work on `main`.
 Full agent handoff doc: `planning/handoffs/2026-08-18-agent-handoff.md`.
 
 ## Next modules (one agent each, exclusive ownership per architecture §8)
