@@ -1,7 +1,7 @@
 # Prodmax Architecture — Canonical System Design
 
-**Doc owner:** consolidation agent | **Date:** 2026-08-16 | **Status:** BINDING for build modules M0–M10
-**Stack (locked):** Astro 5 SSR (Node adapter) hosting one full React island (React Router client-side inside a catch-all route) · Tailwind + shadcn/ui · dither-kit charts/avatars · canvasui signature effects · icons0/Iconify · shieldcn badges · SQLite via Drizzle ORM + better-sqlite3 (file DB, FTS5) · custom email+password auth with HTTP-only cookie sessions · SSE live sync + presence · keyless-first AI layer (deterministic engine = provider #0; LLM providers optional via env).
+**Doc owner:** consolidation agent | **Date:** 2026-08-18 | **Status:** BINDING for build modules M0–M10
+**Stack (locked):** Astro 5 SSR (Node adapter) hosting one full React island (React Router client-side inside a catch-all route) · Tailwind + shadcn/ui · dither-kit charts/avatars · canvasui signature effects · icons0/Iconify · shieldcn badges · SQLite via Drizzle ORM + better-sqlite3 (file DB, FTS5) · custom email+password auth with HTTP-only cookie sessions · SSE live sync + presence · keyless-first AI layer (deterministic engine = provider #0; local CLI agents `claude-code`/`codex` optional; HTTP LLM providers optional via env).
 **Model:** multi-user, multi-workspace; roles owner / admin / member / guest.
 
 Cross-references: features are FM-NNN from `planning/research/feature-matrix.md`; tests are AT-NNN from `planning/qa/acceptance-tests.md`.
@@ -430,7 +430,7 @@ No retention cap (FM-055).
 
 **activity_events** — `id INTEGER PRIMARY KEY AUTOINCREMENT`, workspace_id (index (workspace_id, id)), actor_id NULL, actor_kind CHECK ('user','system','ai'), verb TEXT (e.g. issue.created, issue.state_changed, cycle.rolled_over, ai.suggested_label, ai.drafted_doc, member.invited), entity_type / entity_id, summary TEXT (human sentence), data TEXT json, created_at INTEGER. Index (entity_type, entity_id, id). This is the single audit ledger for user/system/AI actions (FM-057, FM-084).
 
-### 2.9 Platform: events, presence, API keys, webhooks, AI runs
+### 2.9 Platform: events, presence, API keys, webhooks, AI runs, agent chat
 
 **event_log** (SSE replay source)
 | column | type | notes |
@@ -471,6 +471,30 @@ Retention: rows older than 7 days pruned (clients reconnecting after >7d fall ba
 | duration_ms | INTEGER NOT NULL | |
 | outcome | TEXT NOT NULL | json: result class + counts (suggestions made/accepted shown in usage page) |
 | entity_type / entity_id | TEXT NULL | subject entity |
+| created_at | INTEGER | |
+
+**agent_conversations** (FM-073 dock sessions; T-013)
+| column | type | notes |
+|---|---|---|
+| id | TEXT PK | |
+| workspace_id | TEXT FK CASCADE | index (workspace_id, updated_at) |
+| user_id | TEXT FK CASCADE users | owner of the thread (not shared across users in v1) |
+| provider | TEXT NOT NULL | `local` \| `claude-code` \| `codex` |
+| cli_session_id | TEXT NULL | CLI `--resume` token; null for local engine |
+| context | TEXT NOT NULL | json: `{entityType?, entityId?, viewId?, label}` (chip source) |
+| title | TEXT NOT NULL | first-turn stub, then model/local summary |
+| created_at / updated_at | INTEGER | |
+| archived_at | INTEGER NULL | hidden from session list, not deleted |
+
+**agent_messages** (FM-073)
+| column | type | notes |
+|---|---|---|
+| id | TEXT PK | |
+| conversation_id | TEXT FK CASCADE agent_conversations | index (conversation_id, created_at) |
+| role | TEXT CHECK ('user','assistant','system','tool') | |
+| content_md | TEXT NOT NULL | |
+| proposals | TEXT NULL | json array of `{method, path, body, label}` or null |
+| ai_run_id | TEXT NULL FK ai_runs | assistant turns that ran an engine |
 | created_at | INTEGER | |
 
 ### 2.10 Schemes: identifier allocation, positions, FTS5
@@ -619,7 +643,12 @@ Maintained by service-layer write hooks (issue title/description/comment create-
 | POST | /api/ai/hygiene/run | {teamId} → digest {items[]} ; POST /api/ai/hygiene/apply {digestId, itemIds[]} (FM-069) |
 | POST | /api/ai/meeting/extract | {notesMd} → action-item drafts (review tray) (FM-070) |
 | GET | /api/ai/clusters?teamId= | open-issue clusters (FM-071) |
-| POST | /api/ai/chat | provider-routed chat; tools allowlisted (FM-073) |
+| GET | /api/ai/chat/conversations | list current user's non-archived threads (FM-073) |
+| POST | /api/ai/chat/conversations | {provider?, context?, title?} → conversation |
+| GET | /api/ai/chat/conversations/:id | thread + messages; 404 if other user / other workspace |
+| DELETE | /api/ai/chat/conversations/:id | archive (sets archived_at); hard-delete is out of scope |
+| POST | /api/ai/chat/conversations/:id/messages | {contentMd} → `text/event-stream` (`chat-delta` / `done` / `error`). **Not** M8 EventSource. (FM-073) |
+| GET/PATCH | /api/settings/ai | per-workspace `{chatProvider, model, cliPath, toolAllowlist}` (FM-073/084) |
 | GET | /api/ai/usage | per-feature stats from ai_runs (FM-084) |
 
 ### 3.9 Insights, import/export, keys, webhooks, settings (M7/M9/M10)
@@ -642,7 +671,7 @@ Maintained by service-layer write hooks (issue title/description/comment create-
 | GET/PATCH | /api/settings/workspace?wsId= | FM-082 |
 | GET/PATCH | /api/settings/teams/:teamId | FM-083 |
 
-**Endpoint count: ~95** across 9 groups.
+**Endpoint count: ~101** across 9 groups.
 
 ---
 
@@ -723,7 +752,7 @@ type AIRequest = {
   chat:      { workspaceId, userId, messages: {role,content}[] };
 };
 ```
-Every endpoint wraps `invoke` with: workspace scoping (retrieval only within caller's scope), `ai_runs` logging (feature, engine, input_hash, duration, outcome), and result annotation `{engine, engineLabel, asOf}`. **Features never branch on engine** — the deterministic engine is provider #0 and always registered first; env-configured providers (BYOK: `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL`) are appended; routing preference is per-workspace setting with per-conversation token/latency budgets (FM-073).
+Every endpoint wraps `invoke` with: workspace scoping (retrieval only within caller's scope), `ai_runs` logging (feature, engine, input_hash, duration, outcome), and result annotation `{engine, engineLabel, asOf}`. **Features never branch on engine** — the deterministic engine is provider #0 and always registered first; env-configured HTTP providers (BYOK: `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL`) are appended; **local CLI agent providers are a separate class** (§6.5) and are never configured via M9 API keys. Routing preference is per-workspace setting with per-conversation token/latency budgets (FM-073).
 
 ### 6.2 Deterministic implementations (all offline, no network)
 
@@ -750,6 +779,27 @@ Providers implement the same `AIProvider` interface; recommended shape mirrors O
 4. Output entity validation: every assignee/project/label/id in AI output checked against workspace schema; unknowns render as unlinked text (never auto-created).
 5. Input hardening: length caps (10k chars to NLQ/ask), unicode normalization (NFKC), zero-width/control-character stripping, per-run timeout with fallback-to-no-suggestion (triage never crashes the inbox).
 6. Loop caps: any automation-ish feature (hygiene apply) is run-capped and dry-run-gated.
+
+### 6.5 Local CLI agent providers
+
+Provider #0 remains the offline deterministic engine (§6.2). A workspace may also attach **local CLI agent providers** spawned as subprocesses under the signed-in user's own CLI auth. They are **never** reachable via M9 API keys and are **not** BYOK env providers (`AI_API_KEY`). Code lands in T-013/T-014.
+
+**Registered providers (binding order)**
+1. `local` — deterministic engine; always present; degradation target.
+2. `claude-code` — first CLI provider. Spawn the user's `claude` binary (or `cliPath` override) headless with `stream-json` and `--resume` when `agent_conversations.cli_session_id` is set.
+3. `codex` — same seam (spawn, stream, resume, proposals). May ship after `claude-code`; contracts are identical.
+
+**Chat transport.** `POST /api/ai/chat/conversations/:id/messages` responds `text/event-stream` with events `chat-delta`, `done`, and `error`. This stream is **not** M8's workspace EventSource (`GET /api/events`); mixing them is a spec violation. Conversation CRUD: `POST/GET /api/ai/chat/conversations`, `GET/DELETE /api/ai/chat/conversations/:id`. Settings: `GET/PATCH /api/settings/ai` (`chatProvider`, `model`, `cliPath` overrides, tool allowlist).
+
+**Safety invariants (binding)**
+- Arg allowlist only (`stream-json`, `--resume`, model, documented output flags). User text is stdin/payload, never interpolated into argv.
+- Hard timeout per turn; killed process → `error` event, then degrade to local.
+- Output caps (bytes and event count); overflow → stop + `error`.
+- `ai_runs.engine` for CLI turns is `provider:claude-code:<model>` or `provider:codex:<model>`.
+
+**Proposals.** Assistant messages may include `proposals`: validated endpoint-call shapes `{method, path, body, label}`. The dock renders each as an itemized Apply card. Apply runs **under the user's session via the same REST endpoints** the human would call. **No server-side replay of stored requests.** Undo uses the endpoint's undo token when one exists.
+
+**Degradation.** CLI missing, not installed, auth-expired, timeout, or non-zero exit → complete the turn on provider #0 and label it (`Local engine` + reason). The dock never blanks.
 
 ---
 
@@ -800,11 +850,11 @@ Shared constraints (binding, authored in M0/M1): `src/lib/constants.ts` (SSE eve
 | **M3 Issues engine** | `src/pages/api/{issues,comments,views}/**`, `src/features/issues/**`, `src/components/issues/**` | FM-012..020, FM-021..027, FM-029, FM-038..040 (triage UI) |
 | **M4 Projects & cycles** | `src/pages/api/{projects,project-updates,milestones,cycles}/**`, `src/features/projects/**` | FM-030..037 |
 | **M5 Docs engine** | `src/pages/api/{pages,blocks,templates}/**`, `src/features/docs/**`, `src/components/blocks/**` | FM-044..054, FM-079 (md import/export) |
-| **M6 AI layer** | `src/lib/ai/**`, `src/pages/api/ai/**`, `src/components/ai/**` | FM-062..073, ai_runs ledger writes |
+| **M6 AI layer** | `src/lib/ai/**`, `src/pages/api/ai/**`, `src/components/ai/**`, `src/pages/api/settings/ai*` (chat provider; exception vs M10) | FM-062..073, ai_runs ledger writes, agent chat (§6.5) |
 | **M7 Insights** | `src/pages/api/insights/**`, `src/features/insights/**` | FM-058..061 |
 | **M8 Realtime** | `src/pages/api/{events,presence,notifications,activity}/**`, `src/lib/sse/**`, `src/features/{realtime,inbox,activity}/**` | FM-055..057, FM-088..090; event_log reader |
 | **M9 Integrations** | `src/pages/api/{keys,webhooks,import,export}/**`, `src/lib/webhooks/**`, `src/features/integrations/**` | FM-074..078; webhook dispatcher subscribes to M1 bus |
-| **M10 Settings & admin** | `src/pages/api/settings/**`, `src/features/settings/**` | FM-008 UI, FM-082..084 |
+| **M10 Settings & admin** | `src/pages/api/settings/**` except `settings/ai*` (M6), `src/features/settings/**` | FM-008 UI, FM-082..084 |
 
 Overlap rule: a module needing a change inside another module's ownership files a constraint amendment at the integration checkpoint — it never edits the file directly.
 
