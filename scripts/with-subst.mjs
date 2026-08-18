@@ -37,17 +37,30 @@ const componentEnd = normalized.indexOf("\\", lastApos);
 const mapDir = componentEnd === -1 ? normalized : normalized.slice(0, componentEnd);
 const rest = normalized.slice(mapDir.length).replace(/^\\+/, "");
 
-const existing = spawnSync("subst", [], { encoding: "utf8" }).stdout || "";
-const letters = ["X", "Y", "Z", "V", "U", "T", "S", "R"].map((l) => `${l}:`);
-const taken = (l) => existing.toUpperCase().includes(l);
-const reuses = letters.find((l) => taken(l) && existing.toUpperCase().includes(`${l}\\\\: => ${mapDir.toUpperCase()}`) === false);
-let drive = null;
-for (const l of letters) {
-  if (!taken(l)) {
-    const mapped = spawnSync("subst", [l, mapDir], { encoding: "utf8" });
-    if (mapped.status === 0) {
-      drive = l;
-      break;
+// Parse `subst` output ("Y:\: => C:\some\dir") into letter → dir.
+const existingOut = spawnSync("subst", [], { encoding: "utf8" }).stdout || "";
+const mappings = new Map();
+for (const line of existingOut.split(/\r?\n/)) {
+  const m = line.match(/^([A-Za-z]:)\\: => (.+)$/);
+  if (m) mappings.set(m[1].toUpperCase(), m[2]);
+}
+const wanted = mapDir.replace(/\\+$/, "").toUpperCase();
+// Reuse a mapping that already points where we need it — a leftover from a
+// hard-killed run keeps the SAME letter, so root-keyed caches (.astro,
+// node_modules/.vite) stay valid. Only unmap a letter we created below.
+const reused = [...mappings.entries()].find(([, dir]) => dir.replace(/\\+$/, "").toUpperCase() === wanted);
+let drive = reused?.[0] ?? null;
+let created = false;
+if (!drive) {
+  const letters = ["X", "Y", "Z", "V", "U", "T", "S", "R"].map((l) => `${l}:`);
+  for (const l of letters) {
+    if (!mappings.has(l)) {
+      const mapped = spawnSync("subst", [l, mapDir], { encoding: "utf8" });
+      if (mapped.status === 0) {
+        drive = l;
+        created = true;
+        break;
+      }
     }
   }
 }
@@ -61,6 +74,6 @@ let code = 1;
 try {
   code = run(argv[0], argv.slice(1), projectDir);
 } finally {
-  spawnSync("subst", [drive, "/D"]);
+  if (created) spawnSync("subst", [drive, "/D"]);
 }
 process.exit(code);
