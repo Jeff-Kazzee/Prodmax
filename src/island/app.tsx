@@ -18,6 +18,7 @@ import Login from "./routes/Login";
 import Signup from "./routes/Signup";
 import ForgotPassword from "./routes/ForgotPassword";
 import AcceptInvite from "./routes/AcceptInvite";
+import { IssueViewsScreen } from "@island/features/issues";
 
 /** R-13: /team/:key → the team's default view. */
 function TeamDefaultRedirect() {
@@ -32,6 +33,26 @@ const authElements: Record<string, React.ReactElement> = {
   "/invite/:code": <AcceptInvite />,
 };
 
+const ISSUE_VIEW_PATHS = new Set([
+  "/my-issues",
+  "/issues",
+  "/issues/list",
+  "/issues/board",
+  "/issues/table",
+  "/v/:viewId",
+  "/team/:teamKey/all",
+  "/team/:teamKey/active",
+  "/team/:teamKey/backlog",
+  "/team/:teamKey/t/:slug",
+  "/project/:id/board",
+  "/project/:id/list",
+]);
+
+function shellElement(path: string, screen: string): React.ReactElement {
+  if (ISSUE_VIEW_PATHS.has(path)) return <IssueViewsScreen />;
+  return <ScreenPending screen={screen} />;
+}
+
 const router = createBrowserRouter([
   ...AUTH_ROUTES.map((r) => ({
     path: r.path,
@@ -40,18 +61,15 @@ const router = createBrowserRouter([
   {
     element: <ShellLayout />,
     children: [
-      // R-08 alias + R-13 team default-view redirect.
       ...REDIRECTS.map((r) => ({
         path: r.from,
         element: <Navigate to={r.to} replace />,
       })),
       { path: "/team/:teamKey", element: <TeamDefaultRedirect /> },
-      // Screens owned by later modules → shared honest pending screen.
       ...SHELL_ROUTES.map((r) => ({
         path: r.path,
-        element: <ScreenPending screen={r.screen} />,
+        element: shellElement(r.path, r.screen),
       })),
-      // R-49 — 404.
       { path: "*", element: <NotFound /> },
     ],
   },
