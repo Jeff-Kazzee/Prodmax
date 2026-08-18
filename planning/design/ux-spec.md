@@ -1,6 +1,6 @@
 # Prodmax UX Specification — Canonical Interaction Spec
 
-**Doc owner:** UX flow architect | **Date:** 2026-08-16 | **Status:** BINDING for Phase 3 build agents (M2–M10 UI work)
+**Doc owner:** UX flow architect | **Date:** 2026-08-18 | **Status:** BINDING for Phase 3 build agents (M2–M10 UI work)
 **Inputs:** `planning/research/feature-matrix.md` (FM-001..FM-090 scope contract), `planning/architecture.md` (data model, API, SSE, AI layer), `planning/research/linear-deep-dive.md` (§2 workflows, §5 keyboard, §13 edge behaviors).
 **Scope:** All Must + Should features (88 of 90; FM-072/FM-077 are Stretch and appear only as deferred stubs). No application code — this document defines *what the UI does*, exactly, so every build agent produces the same product.
 
@@ -92,7 +92,7 @@ One React island, React Router, client-side after SSR hydration (architecture §
 | R-27 | `/ai` | AI Center — Suggestions queue tab (FM-064/069 etc. review home) | `['ai/suggestions']` | "No suggestions awaiting review" | S-list | ERR-std |
 | R-28 | `/ai/runs` | `ai_runs` ledger browser (FM-084) | `['ai/runs', filters]` | "No AI runs yet" | S-list (table variant) | ERR-std |
 | R-29 | `/ai/usage` | Per-feature usage stats (FM-084) | `['ai/usage']` | zeros state w/ explainers | S-charts mini | ERR-std |
-| R-30 | `/ai/ask` | Deep Ask workspace Q&A chat (FM-066/073) | chat history (local), engine status | Conversation starter: 3 sample questions | Typing indicator + engine badge | Engine timeout pattern §8.13 |
+| R-30 | `/ai/ask` | Deep Ask workspace Q&A chat (FM-066/073); **shares threads with the AI dock** (§3.7) | chat history (server `agent_conversations`) | Conversation starter: 3 sample questions | Typing indicator + engine badge | Engine timeout pattern §8.13 |
 | R-31 | `/archive` | Trash & archive: tabs issues/pages/projects; 30-day window, restore `#` (FM-020/050) | `['trash', tab]` | "Nothing in trash" | S-list | ERR-std |
 
 ### 2.3 Settings & admin routes (shell, admin-gated per capability matrix)
@@ -114,7 +114,7 @@ One React island, React Router, client-side after SSR hydration (architecture §
 | R-44 | `/settings/webhooks/:id` | Delivery ledger, retries, test ping, manual redeliver (FM-076) | empty ledger explainer |
 | R-45 | `/settings/import-export` | CSV import wizard (map → dry-run → commit), exports (FM-078/079) | wizard pattern |
 | R-46 | `/settings/workspace` | Name/slug/timezone/default landing; danger zone delete (FM-082) | type-to-confirm |
-| R-47 | `/settings/ai` | Engine status, provider labels, per-feature toggles + thresholds, autonomous-apply opt-in (FM-064/084) | local engine always-on card |
+| R-47 | `/settings/ai` | Engine status, chatProvider/model/cliPath, not-installed CLI state, per-feature toggles + thresholds, autonomous-apply opt-in (FM-064/073/084) | local engine always-on card; CLI health |
 | R-48 | `/admin/activity` | Workspace activity ledger: user/system/AI actors, filters (FM-057) | "No activity in range" |
 | R-49 | `*` | 404 | — |
 
@@ -139,29 +139,29 @@ Stated once; §4 screens list only deviations.
 ### 3.1 Anatomy
 
 ```
-┌──────────┬──────────────────────────────────────────────────┬────────────┐
-│ SIDEBAR  │ TOPBAR h-44 · bg-1 · hairline-b                  │ ISSUE      │
-│ w-240    │ [SB-10 breadcrumb] [SB-11 view controls]  ⋯spacer │ PANEL      │
-│ bg-1     │ [SB-19 dot][SB-12 presence][SB-16 search]        │ w-480/640  │
-│ hairline │ [SB-13 AI][SB-14 inbox n][SB-15 + New]           │ overlay    │
-│ -r       ├──────────────────────────────────────────────────┤ z-panel 30 │
-│          │ [SB-21 reconnect banner — rendered only while     │            │
-│ SB-01 ◰  │  reconnecting/offline — h-36 sticky]              │            │
-│ FAVORITES├──────────────────────────────────────────────────┤            │
-│ SB-03 ★  │                                                  │            │
-│ TEAMS    │               CONTENT · bg-0                     │            │
-│ SB-05 ▸  │        (route view · §4 · 8px baseline)          │            │
-│ PAGES    │                                                  │            │
-│ SB-02 ▸  │                                                  │            │
-│ SB-04 ◷  │                                                  │            │
-│ SB-20 ◰  │                                                  │            │
-└──────────┴──────────────────────────────────────────────────┴────────────┘
+┌──────────┬──────────────────────────────────────────┬──────────┬────────────┐
+│ SIDEBAR  │ TOPBAR h-44 · bg-1 · hairline-b          │ AI DOCK  │ ISSUE      │
+│ w-240    │ [SB-10 breadcrumb] [SB-11 view controls] │ w-400    │ PANEL      │
+│ bg-1     │ [SB-19][SB-12][SB-16][SB-13 AI][SB-14]   │ 320–560  │ w-480/640  │
+│ hairline │ [SB-15 + New]                            │ grid col │ overlay    │
+│ -r       ├──────────────────────────────────────────┤ §3.7     │ z-panel 30 │
+│          │ [SB-21 reconnect banner — only while      │ AD-01..  │            │
+│ SB-01 ◰  │  reconnecting/offline — h-36 sticky]      │ AD-08    │            │
+│ FAVORITES├──────────────────────────────────────────┤          │            │
+│ SB-03 ★  │               CONTENT · bg-0             │          │            │
+│ TEAMS    │        (reflows when dock open)          │          │            │
+│ SB-05 ▸  │                                          │          │            │
+│ PAGES    │                                          │          │            │
+│ SB-02 ▸  │                                          │          │            │
+│ SB-04 ◷  │                                          │          │            │
+│ SB-20 ◰  │                                          │          │            │
+└──────────┴──────────────────────────────────────────┴──────────┴────────────┘
               overlay layers (over content, above panels):
               COMMAND PALETTE · 640px centered · z-palette 40
               DIALOGS/SHEETS z-dialog 50 · TOASTS z-toast 60 · TOOLTIPS z-tooltip 70
 ```
 
-- CSS grid `[sidebar | main | panel]`; the issue panel **overlays** (never reflows) the content column, dimming nothing — density stays stable when it opens (P5).
+- CSS grid `[sidebar | main | dock]`. The **AI dock** (§3.7) is a grid column: it **reflows** content when open. The issue panel **overlays** (never reflows) the content column, dimming nothing — density stays stable when it opens (P5). Dock and panel **coexist**: opening a panel does not close the dock; opening the dock does not close a panel.
 - The Astro shell (SSR) renders topbar + sidebar + route skeleton; hydration swaps to the SPA. After first paint there are **zero full page reloads** (P1); route changes crossfade content only (§10).
 - Scroll ownership: sidebar scrolls independently; content scrolls independently; panel scrolls independently. `Cmd+↑/↓` (browser default) is never intercepted; Home/End go to list ends when a list has focus (§6).
 
@@ -188,7 +188,7 @@ Stated once; §4 screens list only deviations.
 | SB-10 | **Breadcrumb** (workspace / team / view / `PRO-123`) | Each crumb is a link (hover underline, last crumb `text-primary`, issue crumbs mono). Overflow collapses middle crumbs to "…" (opens the full path in a Popover). Route changes update the breadcrumb before content swaps (no flash of stale title) |
 | SB-11 | **View controls cluster** (left of spacer; only on issue-bearing routes) | `[Layout ▸▸]` segmented List/Board/Table toggle (`Cmd+B` cycles; ARIA radiogroup) · `Group` menu (none/status/assignee/priority/label/project/cycle/team + sub-group second level) · `Order` menu (criteria + asc/desc; manual mode shows "reorder with Alt+↑/↓" hint; reverse allowed in manual — FM-024) · `Filter` trigger (Kbd `F`) focuses the filter bar (S-10) · `Display` popover (visible properties checkboxes, wrapping toggle, sub-issues toggle, hide-empty-groups) · view identity: name, star (SB-12-style favorite), "…" (Rename, Duplicate view, Copy URL, Set as default landing [Should], Delete) |
 | SB-12 | **Presence avatars** (PresenceStack, design-system §33) | Full spec §9.1. In topbar: avatars of people viewing the *current entity* (view/board/issue/page); hover → roster HoverCard; >3 collapses to "+n" chip |
-| SB-13 | **AI button** (Ghost, 16px ⚡ leading glyph, label "AI") | Click → dropdown: Ask workspace (⏎) → R-30 · Suggestions queue (n awaiting) → R-27 · Summarize current view (AI-04) · AI center → R-27. Never amber (AI = phosphor teal, design-system §2.7). Badge dot when suggestions await review |
+| SB-13 | **AI button** (Ghost, 16px ⚡ leading glyph, label "AI") | Click **toggles the AI dock** (§3.7, `Cmd+J`). Dropdown items from the old menu are folded into the dock (Ask / current-view summarize / suggestions) and AI center (R-27). Palette command "Toggle AI dock". Never amber (AI = phosphor teal, design-system §2.7). Badge dot when suggestions await review. `aria-pressed` reflects dock open state |
 | SB-14 | **Inbox bell** (IconButton) | Click → R-07. Mono unread count badge (tabular, caps at "99+"); badge increments live via SSE `notification.created` with a 150ms scale-in; clicking clears for the visible page only. SR name announces count ("Inbox, 3 unread") |
 | SB-15 | **New issue** (Primary sm, plus icon, Kbd `C`) | Opens the quick-create modal (S-13). Disabled (tooltip "No team access") only for a guest with zero teams — an edge that cannot normally occur |
 | SB-16 | **Search trigger** (Input-look button, placeholder "Search…", trailing Kbd `/`) | Opens the command palette in search mode (§7.4). Never a real input in the topbar — one search surface, always the palette (FM-042) |
@@ -198,8 +198,9 @@ Stated once; §4 screens list only deviations.
 
 ### 3.4 Right panel, palette, toasts, banner (slots)
 
-- **Issue panel** (S-12): overlays content, `panel-slide` in (200ms), focus-trapped dialog; closes on Esc / close button / route change away; URL keeps `?issue=PRO-123` as shareable truth (R-10 conventions). Only one panel instance at a time; opening another issue swaps content in place (no re-slide) with a `row-pulse` on the new header.
-- **Command palette** (§7): overlay centered, `palette-in`; focus trap; while open, all other shortcuts suppressed except Esc and palette keys.
+- **Issue panel** (S-12): overlays content, `panel-slide` in (200ms), focus-trapped dialog; closes on Esc / close button / route change away; URL keeps `?issue=PRO-123` as shareable truth (R-10 conventions). Only one panel instance at a time; opening another issue swaps content in place (no re-slide) with a `row-pulse` on the new header. **Coexistence:** the AI dock stays open and keeps its width; the panel overlays the reflowed content, not the dock.
+- **AI dock** (§3.7): right-side grid column (not an overlay). `Cmd+J` / SB-13 / palette toggle. Esc does **not** close the dock (Esc still closes palette → dialog → panel → menu → selection). Persist open/closed + width in the user's workspace navigation state.
+- **Command palette** (§7): overlay centered, `palette-in`; focus trap; while open, all other shortcuts suppressed except Esc and palette keys. Includes "Toggle AI dock".
 - **Toast stack** (design-system §19): bottom-right; on <768px bottom-left above the bottom-nav; max 3 visible + "n more" collapse chip.
 - **Reconnect banner slot** (SB-21, design-system §47): full-width strip between topbar and content, sticky `z-sidebar`; state machine in §9.5; renders **nothing** while synced (no layout shift reserved — it pushes content 36px when it appears; the push is the signal).
 
@@ -213,6 +214,7 @@ Stated once; §4 screens list only deviations.
 | `navigation` | sidebar `<nav>` | "Workspace navigation" |
 | `main` | content region | `aria-labelledby` → route title (view name / page title / "Settings") |
 | `complementary` | issue panel (when open) | "Issue details" |
+| `complementary` | AI dock (when open) | "AI dock" |
 | `dialog` + `aria-modal` | palette, quick-create modal, dialogs, sheets | per component |
 | `role=status` / `role=alert` | toasts (danger = alert), reconnect banner, sync dot text alternative | per design-system §10.3 |
 
@@ -222,10 +224,37 @@ A "shortcuts" button (Kbd `?`, also in sidebar footer menu) opens searchable sho
 
 | Breakpoint | Shell |
 |---|---|
-| **≥1024 desktop (full)** | Everything in §3.1–3.4. Sidebar expanded by default; panel overlays |
-| **768–1023 tablet (collapsed sidebar)** | Sidebar auto-collapses to the 48px rail on load (user may expand; not persisted across sessions at this width). Expanding renders the sidebar as an **overlay drawer** (`z-sidebar`, scrim, `panel-slide` from left; Esc/scrim-click closes; focus trap). Issue panel renders **full-width** over content. View controls collapse into an overflow "…" popover (Group/Order/Display move there; Layout toggle stays). Board columns scroll horizontally with 16px snap points |
-| **<768 mobile (bottom-nav + sheets)** | Sidebar hidden entirely (available from "More" sheet). Topbar reduces to back-chevron + truncated title + sync dot + inbox bell. **Bottom nav** (h-56, hairline-top): Home · Inbox · **New issue** (center, accent-filled 40px circle) · Docs · More. "More" opens a bottom sheet: Projects, Cycles, Insights, AI, Triage, Settings, profile, theme. All detail surfaces (issue, filters, display, triage actions, move-sheet) render as **full-screen sheets**. Board drag never mutates on drop — long-press (250ms) opens the move-sheet with explicit property change + confirm (FM-026). Hit targets ≥36px (P5); presence stack collapses to "+n" chip |
+| **≥1024 desktop (full)** | Everything in §3.1–3.4 plus §3.7. Sidebar expanded by default; panel overlays; AI dock is a grid column when open |
+| **768–1023 tablet (collapsed sidebar)** | Sidebar auto-collapses to the 48px rail on load (user may expand; not persisted across sessions at this width). Expanding renders the sidebar as an **overlay drawer** (`z-sidebar`, scrim, `panel-slide` from left; Esc/scrim-click closes; focus trap). Issue panel renders **full-width** over content. AI dock stays a column at min 320 if open. View controls collapse into an overflow "…" popover (Group/Order/Display move there; Layout toggle stays). Board columns scroll horizontally with 16px snap points |
+| **<768 mobile (bottom-nav + sheets)** | Sidebar hidden entirely (available from "More" sheet). Topbar reduces to back-chevron + truncated title + sync dot + inbox bell. **Bottom nav** (h-56, hairline-top): Home · Inbox · **New issue** (center, accent-filled 40px circle) · Docs · More. "More" opens a bottom sheet: Projects, Cycles, Insights, AI, Triage, Settings, profile, theme. All detail surfaces (issue, filters, display, triage actions, move-sheet) render as **full-screen sheets**. **AI dock is a full-screen sheet** (not a column). Board drag never mutates on drop — long-press (250ms) opens the move-sheet with explicit property change + confirm (FM-026). Hit targets ≥36px (P5); presence stack collapses to "+n" chip |
 | **360px floor** | Grid drops to single column; list rows keep ID + title + state only (other properties available in the row kebab); filter bar is a single funnel button opening a sheet. No horizontal scrolling except board columns |
+
+### 3.7 AI dock (AD-01..AD-08)
+
+Persistent agent-chat surface (FM-073). Primary chat UI — R-30 `/ai/ask` and the dock **share threads** (same `agent_conversations` rows). Default width 400px; resizable 320–560. Open/closed + width persist in workspace navigation state. `Cmd+J`, SB-13, and palette "Toggle AI dock" all toggle it. Code lands in T-014.
+
+```
+┌ sessions ──┬ thread ──────────────────────────────────────┐
+│ AD-01      │ AD-03 engine  AD-04 About: PRO-123           │
+│ • Export   │ AD-02 messages…                              │
+│ • Current  │ AD-07 [Apply create issue — Undo]            │
+│            │ AD-05 composer                    [AD-06 Stop]│
+│            │ AD-08 resize handle (left edge)              │
+└────────────┴──────────────────────────────────────────────┘
+```
+
+| ID | Element | Trigger → behavior |
+|---|---|---|
+| AD-01 | **Session list** | Current user's non-archived conversations; click loads thread; "+ New" starts a conversation with current context; archive from row kebab (DELETE) |
+| AD-02 | **Thread** | User/assistant/system/tool messages as markdown; streaming `chat-delta` appends to the in-flight assistant bubble; error bubble is retryable |
+| AD-03 | **Engine badge** | Live provider+model (`Local engine` / `claude-code:<model>` / `codex:<model>`). Updates on degradation without leaving the thread |
+| AD-04 | **Context chip** | `"About: PRO-123"` or `"About: current view"` from `agent_conversations.context`; click focuses the entity; clearing the chip sends the next turn unscoped |
+| AD-05 | **Composer** | Enter sends (Shift+Enter newline). Disabled while a turn is streaming unless Stop is used. Never fires global single-key shortcuts while focused |
+| AD-06 | **Stop** | Visible only while streaming; aborts the subprocess / local invoke; partial assistant text stays; `cli_session_id` remains resumable |
+| AD-07 | **Proposal cards** | One card per `{method, path, body, label}`. **Apply** runs that REST call under the user session (architecture §6.5) — never a stored-request replay. Success toast with Undo when the endpoint returns an undo token |
+| AD-08 | **Resize handle** | Left edge of the dock; drag 320–560; double-click resets to 400. Not present in the <768 sheet |
+
+**Keyboard:** `Cmd+J` toggles; when dock focused: `Esc` returns focus to `main` (does not close); composer keys as AD-05. **Realtime:** chat uses the conversation SSE, not M8. **States:** skeleton session list on first open; empty thread = 3 starter prompts; `ERR-std` on send failure; "Claude Code not installed" / "Codex not installed" copy links to Settings → AI (ST-90).
 
 ---
 
@@ -765,7 +794,7 @@ Static explainer card (no form — v1 has no SMTP, FM-008): "Password resets are
 
 ### 4.22 S-22 — AI center (R-27 queue, R-28 runs, R-29 usage, R-30 ask) · `AC-`
 
-**Purpose:** the review home for every AI output + full transparency ledgers (FM-064/069/084). Empty-state hero uses canvasui GlyphRain (design-system §7.2) — the one working-adjacent canvas moment, only when the queue is empty.
+**Purpose:** the review home for every AI output + full transparency ledgers (FM-064/069/084). **The AI dock (§3.7) is the primary chat surface**; the `/ai/ask` tab (AC-04) and the dock share `agent_conversations` threads. Empty-state hero uses canvasui GlyphRain (design-system §7.2) — the one working-adjacent canvas moment, only when the queue is empty.
 
 ```
 ┌ AI ⚡ local engine ────────────────────────── [engine ▾] ┐
@@ -783,7 +812,7 @@ Static explainer card (no form — v1 has no SMTP, FM-008): "Password resets are
 | AC-01 | **Suggestions queue tab** (R-27) | Every open AI proposal in one list (AISuggestionCard, design-system §35): EngineBadge + feature + entity link + as-of mono + **diff/chip review body** (per-type presentations §8) + Accept / Reject / Why / Dismiss + **expires-in mono** (7-day countdown, P4). Filters: feature Select · entity search. Accepting writes via the same REST endpoint a human would use (architecture §6.4) |
 | AC-02 | **Runs tab** (R-28) | `ai_runs` ledger table: time · feature · **EngineBadge** · actor · entity · duration mono (`12 ms`) · outcome (suggested/accepted/rejected counts). Filters: feature, engine, actor, date range. Click a run → detail popover with input hash + outcome json (read-only) |
 | AC-03 | **Usage tab** (R-29) | UsageMeter rows per feature (design-system §51): invocations, p50 latency, accept-rate Sparkline, cost cell — `$0.00` mono in local mode (teal provider spend + ceiling ProgressBar when BYOK is configured, FM-084) |
-| AC-04 | **Ask tab** (R-30) | Deep Ask workspace chat (full pattern AI-12): engine badge on every answer, cited sentences, confidence mono, explicit "No confident match" state, 3 sample-question starters on empty |
+| AC-04 | **Ask tab** (R-30) | Same threads as the AI dock (architecture §6.5). Opening Ask with an active dock conversation selects that thread; sending here streams into both. Deep Ask still uses the local extractive path when `chatProvider=local`. Engine badge, cited sentences, confidence mono, explicit "No confident match" when local-ask has no hit, 3 sample-question starters on empty |
 | AC-05 | **Engine switcher** | Shows active routing (Local engine always first/available; provider list from env with model labels — FM-073). Per-workspace preference; switching never changes available features (features never branch on engine, architecture §6.1) |
 | AC-06 | **Empty queue** | `E-empty` + GlyphRain: "No suggestions awaiting review" + "Ask your workspace" CTA → AC-04 |
 
@@ -856,7 +885,7 @@ Settings layout: SettingsNav (design-system §24) + bg-0 content with bg-2 cards
 #### 4.23.10 AI (R-47)
 | ID | Element | Trigger → behavior |
 |---|---|---|
-| ST-90 | Engine status card | Local deterministic engine: always-on shield badge; provider list from env with model labels + health; routing preference Select (never feature-gating, FM-073) |
+| ST-90 | Engine status card | Local deterministic engine: always-on shield badge. **Chat provider** Select: `local` · `claude-code` · `codex`. Model text field. `cliPath` overrides (empty = PATH). Tool allowlist. **Not installed** state: if the chosen CLI binary is missing, show "Claude Code not installed" / "Codex not installed" with install hint — chat still degrades to local (architecture §6.5). HTTP BYOK provider list remains env-driven and never feature-gates (FM-073) |
 | ST-91 | Per-feature toggles | 11 features × enable + thresholds where applicable (related-content similarity threshold — FM-068) |
 | ST-92 | Autonomous-apply opt-in | Triage assist auto-apply: off by default; enable requires precision display (current accept-rate mono) + explicit checkbox + type-"AUTO" confirm (FM-064/084 — Height-lesson guard) |
 | ST-93 | Usage/ledger links | Deep links to R-28/R-29 |
@@ -950,6 +979,7 @@ Single source of truth for `?` help overlay (R-49/palette action) and `Cmd+/` ch
 | `Esc` | Close topmost layer: palette → dialog → panel → menu → selection (in that order, one press each) |
 | `Cmd+\` | Toggle sidebar collapse |
 | `Cmd+.` | Toggle right panel (issue detail) |
+| `Cmd+J` | Toggle AI dock (§3.7) |
 | `Cmd+Shift+F` | Global search (palette in search mode) |
 | `F1` | Jump to workspace switcher |
 
@@ -1009,7 +1039,7 @@ Covered in §5 (ED-01…ED-15). Summary chords: `Cmd+Enter` save+close editor ta
 
 Typed prefixes reshape behavior: `>` commands only · `#` labels · `@` people · bare issue identifier (e.g., `PRO-42`) → direct jump row pinned first. Default query (no prefix) searches across, in rank order:
 
-1. **Actions** — commands matching the query (Create issue, New doc, Toggle theme, Invite member, Import CSV…), scored exact > prefix > fuzzy subsequence.
+1. **Actions** — commands matching the query (Create issue, New doc, Toggle theme, Toggle AI dock, Invite member, Import CSV…), scored exact > prefix > fuzzy subsequence.
 2. **Navigation** — routes and saved views matching.
 3. **Recent issues** — your last-opened 20, recency-weighted 0.3.
 4. **Pages** — FTS5 title+body matches, ranked bm25, grouped under page icons.
@@ -1026,7 +1056,7 @@ When the palette opens in an issues context (or the query starts with `filter:`)
 
 | State | Rendering |
 |---|---|
-| Empty query | "Recent" (last 8 executions) + per-section top items + pinned row "Ask the workspace ⚡" |
+| Empty query | "Recent" (last 8 executions) + per-section top items + pinned rows "Ask the workspace ⚡" and "Toggle AI dock" |
 | No results | "No matches for 'X'" + fallback row "Ask the workspace about 'X' ⚡" (routes to AI center with query prefilled) |
 | AI running | 3 skeleton rows + ⚡ badge + "thinking locally…" caption (never a spinner-blocking pattern; results stream in by row) |
 | AI error | Row degrades to plain search results + footer note "AI unavailable — showing search" |
