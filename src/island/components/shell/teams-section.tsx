@@ -1,7 +1,8 @@
 /**
  * SB-05 Teams section: one expandable group per team (sidebar position
  * order). Expansion loads the team's workflow states (GET /api/teams/:id/states)
- * and links the team's real views (R-14 all/active/backlog) plus new issue (R-15).
+ * and links the team's live issue views (R-14 all/active/backlog — T-003)
+ * plus new issue (R-15).
  */
 import { useState } from "react";
 import { Link, NavLink } from "react-router-dom";
