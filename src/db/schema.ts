@@ -775,6 +775,20 @@ export const issueRedirects = sqliteTable("issue_redirects", {
   index("issue_redirects_issue_idx").on(t.issueId),
 ]);
 
+/** Compensating-action undo tokens for bulk issue mutations (FM-027). */
+export const undoTokens = sqliteTable("undo_tokens", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  actorId: text("actor_id").notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  payload: text("payload").notNull(),
+  createdAt: integer("created_at").notNull(),
+  consumedAt: integer("consumed_at"),
+}, (t) => [
+  index("undo_tokens_ws_created_idx").on(t.workspaceId, t.createdAt),
+]);
+
 /**
  * search_fts (FTS5 virtual table) and its sync triggers live in
  * src/db/fts.sql — Drizzle cannot express virtual tables. Applied

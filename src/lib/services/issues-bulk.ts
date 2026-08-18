@@ -1,5 +1,5 @@
-import { eq, sql } from "drizzle-orm";
-import { issues } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
+import { issueRedirects, issues, undoTokens } from "@/db/schema";
 import { uuid7 } from "@/db/ids";
 import { currentDb } from "@/lib/api/db";
 import { HttpError } from "@/lib/api/errors";
@@ -32,19 +32,6 @@ type UndoSnapshot = {
 
 type UndoPayload = { action: BulkInput["action"]; snapshots: UndoSnapshot[] };
 
-function ensureUndoTable(): void {
-  currentDb().run(sql`
-    CREATE TABLE IF NOT EXISTS undo_tokens (
-      token TEXT PRIMARY KEY,
-      workspace_id TEXT NOT NULL,
-      actor_id TEXT NOT NULL,
-      payload TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      consumed_at INTEGER
-    )
-  `);
-}
-
 function snapshotOf(issue: IssueRow): UndoSnapshot {
   return {
     id: issue.id,
@@ -76,9 +63,8 @@ function applyAction(
       updateIssue(wsId, actor, issue.id, { stateId: value }, undefined);
       return;
     case "assignee": {
-      const assigneeId = value === null ? null : typeof value === "string" ? value : null;
       if (value !== null && typeof value !== "string") throw new HttpError("VALIDATION", "value must be a user id or null");
-      updateIssue(wsId, actor, issue.id, { assigneeId }, undefined);
+      updateIssue(wsId, actor, issue.id, { assigneeId: value === null ? null : value }, undefined);
       return;
     }
     case "labels":
@@ -102,15 +88,13 @@ function applyAction(
       moveIssueTeam(wsId, actor, issue.id, value, undefined);
       return;
     case "cycle": {
-      const cycleId = value === null ? null : typeof value === "string" ? value : null;
       if (value !== null && typeof value !== "string") throw new HttpError("VALIDATION", "value must be a cycle id or null");
-      updateIssue(wsId, actor, issue.id, { cycleId }, undefined);
+      updateIssue(wsId, actor, issue.id, { cycleId: value === null ? null : value }, undefined);
       return;
     }
     case "project": {
-      const projectId = value === null ? null : typeof value === "string" ? value : null;
       if (value !== null && typeof value !== "string") throw new HttpError("VALIDATION", "value must be a project id or null");
-      updateIssue(wsId, actor, issue.id, { projectId }, undefined);
+      updateIssue(wsId, actor, issue.id, { projectId: value === null ? null : value }, undefined);
       return;
     }
     default: {
@@ -120,59 +104,88 @@ function applyAction(
   }
 }
 
+function restoreSnapshot(wsId: string, snap: UndoSnapshot): void {
+  const current = latestIssue(snap.id);
+  if (snap.deletedAt === null && current.deletedAt) restoreIssue(snap.id);
+  currentDb()
+    .update(issues)
+    .set({
+      teamId: snap.teamId,
+      identifier: snap.identifier,
+      number: snap.number,
+      stateId: snap.stateId,
+      assigneeId: snap.assigneeId,
+      priority: snap.priority,
+      projectId: snap.projectId,
+      cycleId: snap.cycleId,
+      archivedAt: snap.archivedAt,
+      deletedAt: snap.deletedAt,
+      version: snap.version,
+      updatedAt: Date.now(),
+    })
+    .where(eq(issues.id, snap.id))
+    .run();
+  replaceIssueLabels(wsId, snap.id, snap.labelIds);
+  currentDb()
+    .delete(issueRedirects)
+    .where(and(eq(issueRedirects.issueId, snap.id), eq(issueRedirects.oldIdentifier, snap.identifier)))
+    .run();
+}
+
 export function bulkUpdateIssues(
   wsId: string,
   actor: { userId: string; role: Role },
   input: BulkInput,
 ): { undoToken: string; updated: number } {
-  const snapshots: UndoSnapshot[] = [];
-  for (const id of input.ids) {
-    const issue = requireLiveIssue(wsId, id, actor.role, actor.userId);
-    snapshots.push(snapshotOf(issue));
-    applyAction(wsId, actor, issue, input.action, input.value);
-  }
-  ensureUndoTable();
-  const token = uuid7();
-  const payload: UndoPayload = { action: input.action, snapshots };
-  currentDb().run(
-    sql`INSERT INTO undo_tokens (token, workspace_id, actor_id, payload, created_at, consumed_at)
-        VALUES (${token}, ${wsId}, ${actor.userId}, ${JSON.stringify(payload)}, ${Date.now()}, NULL)`,
-  );
-  recordIssueMutation({ kind: "updated", workspaceId: wsId, issueId: input.ids[0], actorId: actor.userId, patch: { bulk: input.action } });
-  return { undoToken: token, updated: snapshots.length };
+  return currentDb().transaction(() => {
+    const snapshots: UndoSnapshot[] = [];
+    for (const id of input.ids) {
+      const issue = requireLiveIssue(wsId, id, actor.role, actor.userId);
+      snapshots.push(snapshotOf(issue));
+      applyAction(wsId, actor, issue, input.action, input.value);
+    }
+    const token = uuid7();
+    currentDb()
+      .insert(undoTokens)
+      .values({
+        id: token,
+        workspaceId: wsId,
+        actorId: actor.userId,
+        payload: JSON.stringify({ action: input.action, snapshots } satisfies UndoPayload),
+        createdAt: Date.now(),
+        consumedAt: null,
+      })
+      .run();
+    recordIssueMutation({
+      kind: "updated",
+      workspaceId: wsId,
+      issueId: input.ids[0],
+      actorId: actor.userId,
+      patch: { bulk: input.action },
+    });
+    return { undoToken: token, updated: snapshots.length };
+  });
 }
 
 export function applyUndo(wsId: string, actorId: string, token: string): { restored: number } {
-  ensureUndoTable();
-  const row = currentDb().get<{ payload: string; workspace_id: string; consumed_at: number | null }>(
-    sql`SELECT payload, workspace_id, consumed_at FROM undo_tokens WHERE token = ${token}`,
-  );
-  if (!row || row.workspace_id !== wsId) throw new HttpError("NOT_FOUND", "Undo token not found");
-  if (row.consumed_at) throw new HttpError("CONFLICT", "Undo token already used");
-  const payload = JSON.parse(row.payload) as UndoPayload;
-  for (const snap of payload.snapshots) {
-    if (snap.deletedAt === null && latestIssue(snap.id).deletedAt) restoreIssue(snap.id);
+  return currentDb().transaction(() => {
+    const row = currentDb().select().from(undoTokens).where(eq(undoTokens.id, token)).get();
+    if (!row || row.workspaceId !== wsId) throw new HttpError("NOT_FOUND", "Undo token not found");
+    if (row.consumedAt) throw new HttpError("CONFLICT", "Undo token already used");
+    const payload = JSON.parse(row.payload) as UndoPayload;
+    for (const snap of payload.snapshots) restoreSnapshot(wsId, snap);
     currentDb()
-      .update(issues)
-      .set({
-        teamId: snap.teamId,
-        identifier: snap.identifier,
-        number: snap.number,
-        stateId: snap.stateId,
-        assigneeId: snap.assigneeId,
-        priority: snap.priority,
-        projectId: snap.projectId,
-        cycleId: snap.cycleId,
-        archivedAt: snap.archivedAt,
-        deletedAt: snap.deletedAt,
-        version: snap.version,
-        updatedAt: Date.now(),
-      })
-      .where(eq(issues.id, snap.id))
+      .update(undoTokens)
+      .set({ consumedAt: Date.now() })
+      .where(eq(undoTokens.id, token))
       .run();
-    replaceIssueLabels(wsId, snap.id, snap.labelIds);
-  }
-  currentDb().run(sql`UPDATE undo_tokens SET consumed_at = ${Date.now()} WHERE token = ${token}`);
-  recordIssueMutation({ kind: "updated", workspaceId: wsId, issueId: payload.snapshots[0]?.id ?? token, actorId, patch: { undo: true } });
-  return { restored: payload.snapshots.length };
+    recordIssueMutation({
+      kind: "updated",
+      workspaceId: wsId,
+      issueId: payload.snapshots[0]?.id ?? token,
+      actorId,
+      patch: { undo: true },
+    });
+    return { restored: payload.snapshots.length };
+  });
 }
