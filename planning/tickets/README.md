@@ -72,7 +72,7 @@ at ≤6 logins.
 |---|---|---|
 | T-001 | Phase A spec amendments (AI dock + agent providers) | done |
 | T-002 | M3a Issues API + services | done |
-| T-003 | M3b Issue views UI (list/board/table/filter/views) | in-review |
+| T-003 | M3b Issue views UI (list/board/table/filter/views) | done |
 | T-004 | M3c Issue panel + new-issue modal + triage | open |
 | T-005 | M4a Projects/cycles API | open |
 | T-006 | M4b Projects/cycles UI | open |

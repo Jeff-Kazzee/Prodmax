@@ -1,6 +1,6 @@
 # T-003 — M3b Issue views UI (list/board/table/filter/views)
 
-status: in-review
+status: done
 module: M3 issues engine
 assignee: Cursor Grok 2026-08-18
 owns: src/island/features/issues/**, src/components/issues/**, edits to src/island/app/routes.ts + src/island/app.tsx (route swaps only), tests/island/features/issues*
@@ -61,6 +61,8 @@ Team sidebar R-14 targets were already live; comment only.
 **Tests:** filter AST + `?f=` chip CRUD, virtualization window math,
 selection (toggle/range/all), collapse persistence, board drop →
 `PATCH {stateId}`. e2e: login, `/issues`, add priority chip, URL has `?f=`.
+
+**PR:** https://github.com/Jeff-Kazzee/Prodmax/pull/6 into `dev`.
 
 **Gates:** `npm run check` 0 errors · `npm test` 114/114 · `npm run build`
 clean · `npm run e2e` 7/7.
