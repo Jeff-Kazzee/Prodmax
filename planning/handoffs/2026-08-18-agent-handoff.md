@@ -1,21 +1,24 @@
-# Prodmax → Cursor Handoff (2026-08-18, rev 2 — NEW PATH)
+# Prodmax → Coding Agent Handoff (2026-08-18, rev 3 — model-agnostic)
 
-**For:** Cursor agent finishing the Prodmax build-out.
-**Repo (NEW LOCATION):** `C:\Users\jeffk\big-projects\Prodmax`
+**For:** any coding agent or AI pair (Cursor, Claude Code, Codex, ZCode,
+Copilot, a human with a terminal — the protocol is the same for all).
+**Repo:** `C:\Users\jeffk\big-projects\Prodmax`
 (git, branch `main`, remote `origin` = https://github.com/Jeff-Kazzee/Prodmax — public).
-**State at handoff:** clean tree at `fc772b3`, all gates green (check 0 errors ·
-85/85 vitest · build clean · 6/6 e2e — re-verified at the new path after the
-move), no in-flight work, no running servers, no subst mappings of ours.
+**State at handoff:** clean tree, all gates green (check 0 errors · 85/85
+vitest · build clean · 6/6 e2e — re-verified after the repo move), no
+in-flight work, no running servers.
 
 > The project was MOVED here from `…/Jeff's Agent Workshop/dev/projects/Prodmax`
 > on 2026-08-18 to eliminate the apostrophe-path problem class. The old
-> location contains only an empty folder + `MOVED.txt` (locked by the moving
-> session; delete freely). Do NOT work from the old path.
+> location contains only an empty folder + `MOVED.txt`. Do NOT work from the
+> old path.
 
 ## Start here (in order)
 
-1. `AGENTS.md` — project conventions (binding). Cursor auto-loads rules via
-   `.cursorrules`, which points here and carries the new path.
+1. `AGENTS.md` — project conventions (binding). Most agents auto-load it;
+   if yours doesn't, read it first anyway. (Pointer files `.cursorrules` and
+   `CLAUDE.md` exist for tools with their own conventions — they all lead to
+   the same place.)
 2. `planning/tickets/README.md` — the work protocol: claim the lowest-numbered
    `status: open` ticket whose `depends-on` are all `done`, follow the shell +
    anti-stall rules, run the four gates, commit atomically, flip status.
@@ -50,9 +53,9 @@ render an honest "Still on the bench" pending component — swap them per ticket
 
 ## Environment notes (much simpler now)
 
-- Path is apostrophe-free — quote-free commands work; no subst drives are
-  involved. `scripts/with-subst.mjs` and `scripts/patch-astro.mjs` are
-  dormant no-ops kept as safety nets; leave them.
+- Path is apostrophe-free — no subst drives are involved.
+  `scripts/with-subst.mjs` and `scripts/patch-astro.mjs` are dormant no-ops
+  kept as safety nets; leave them.
 - `resolve.preserveSymlinks: true` in astro.config.mjs is harmless here —
   leave it (it guards any future path weirdness).
 - Dev binds 4321, or 4322+ if taken — read the `Local:` log line. Kill
@@ -67,10 +70,10 @@ render an honest "Still on the bench" pending component — swap them per ticket
   flips before the shell mounts.
 - Git Bash on Windows: `taskkill //PID` (double slashes).
 
-## Suggested skills / workflows for Cursor
+## Working style for any agent
 
-- One ticket per Cursor agent conversation; plan first, then execute.
-- Use Cursor's terminal for the four gates; run them before every commit.
+- One ticket per conversation/session; plan first, then execute.
+- Run the four gates in a terminal before every commit.
 - If a ticket feels too big mid-flight (T-009 block editor is the known
   giant), land a coherent subset as its own commit and finish the rest in a
   follow-up — the tickets explicitly allow this.
