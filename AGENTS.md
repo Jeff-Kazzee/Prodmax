@@ -15,8 +15,20 @@ not the office."
 - `planning/design/design-system.md` — binding: tokens, components, a11y
 - `planning/research/feature-matrix.md` — feature tiers (Must/Should/Stretch)
 - `planning/plans/build-prodmax.md` — the approved build plan
+- `planning/tickets/` — **the work queue**: T-001…T-021, one self-contained
+  ticket per module brief, with claim/verify rules in `planning/tickets/README.md`
 - `planning/qa/acceptance-tests.md` — AT-001…119 (exit gate)
 - `planning/qa/defect-log.md` — every defect found in verify, fix, retest
+
+## Working from tickets (default way to build)
+
+Any agent (orchestrator subagent, standalone session, human-driven) picks the
+lowest-numbered `status: open` ticket in `planning/tickets/` whose
+dependencies are `done`, and follows `planning/tickets/README.md` — it carries
+the binding shell rules (apostrophe path, subst drives, port/PID discipline),
+the anti-stall rules, the four-gate definition of done, and the commit/claim
+protocol. Tickets reference spec sections instead of restating them; the
+specs stay binding.
 
 ## Validation commands (single source of truth)
 

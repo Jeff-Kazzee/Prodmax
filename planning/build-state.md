@@ -48,7 +48,17 @@ NEVER `cd` onto a subst drive (Y:) in the main shell; see Shell rules below.
 
 ## Next modules (one agent each, exclusive ownership per architecture §8)
 
-**M3 issues engine** → `src/pages/api/{issues,comments,views}/**`, `src/features/issues/**`, `src/components/issues/**` (FM-012..020, 021..027, 029, 038..040 incl. triage UI; filter DSL per architecture §4; swap the issue routes' ScreenPending for real screens; wire sidebar team-section links). Then M4 projects/cycles → M5 docs → M6 AI → M7 insights → M8 realtime → M9 integrations → M10 settings/admin → Phase 4 verification. Module briefs derive from architecture §3 endpoints + §8 ownership, ux-spec screens, design-system tokens. The orchestrator verifies all four gates + commits after each module.
+**The work queue now lives in `planning/tickets/` (T-001…T-021)** — read
+`planning/tickets/README.md` for the claim/verify protocol; each ticket is a
+self-contained brief (owns/depends-on/deliverables/acceptance). Order: T-001
+spec amendments (AI dock + claude-code/codex agent providers — approved
+2026-08-18, chat + propose/human-applies) → T-002..T-004 M3 issues →
+T-005/T-006 M4 → T-007..T-010 M5 docs → T-011/T-012 M6a deterministic AI →
+T-013/T-014 M6b agent chat → T-015 M7 → T-016/T-017 M8 realtime → T-018 M9 →
+T-019 M10 → T-020 verification sweep → T-021 polish. Parallel-safe chains
+noted in the tickets README. The orchestrator verifies all four gates +
+commits after each ticket; standalone agents may commit per the README
+protocol.
 
 ## Shell rules (hard-won — read twice)
 
