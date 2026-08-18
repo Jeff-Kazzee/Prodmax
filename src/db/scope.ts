@@ -45,6 +45,7 @@ export const SCOPED_TABLES = [
   "ai_runs",
   "triage_feedback",
   "issue_redirects",
+  "undo_tokens",
 ] as const;
 
 export type ScopedTable = (typeof SCOPED_TABLES)[number];

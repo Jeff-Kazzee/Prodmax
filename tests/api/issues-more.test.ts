@@ -142,6 +142,44 @@ describe("move-team + relations + bulk", () => {
     });
     expect(undone.status).toBe(200);
     expect((await bodyOf(await getIssue({ request: apiReq("GET", `/issues/${created.issue.id}?wsId=${wsId}`, { cookie }), params: { id: created.issue.id } }))).issue.priority).toBe(0);
+
+    const again = await undo({
+      request: apiReq("POST", `/undo/${token}?wsId=${wsId}`, { cookie, test: true }),
+      params: { token },
+    });
+    expect(again.status).toBe(409);
+  });
+
+  it("bulk move_team undo restores identifier and drops the redirect", async () => {
+    const { wsId, teamId, cookie } = await env();
+    seedEngTeam(wsId, teamId);
+    const created = await bodyOf(
+      await createIssue({
+        request: apiReq("POST", `/issues?wsId=${wsId}`, { cookie, body: { teamId, title: "Move me" }, test: true }),
+      }),
+    );
+    const bulk = await bulkIssues({
+      request: apiReq("POST", `/issues/bulk?wsId=${wsId}`, {
+        cookie,
+        body: { ids: [created.issue.id], action: "move_team", value: "eng-team" },
+        test: true,
+      }),
+    });
+    expect(bulk.status).toBe(200);
+    const token = (await bodyOf(bulk)).undoToken as string;
+    expect((await bodyOf(await getIssue({ request: apiReq("GET", `/issues/${created.issue.id}?wsId=${wsId}`, { cookie }), params: { id: created.issue.id } }))).issue.identifier).toBe("ENG-1");
+
+    const undone = await undo({
+      request: apiReq("POST", `/undo/${token}?wsId=${wsId}`, { cookie, test: true }),
+      params: { token },
+    });
+    expect(undone.status).toBe(200);
+    const restored = await bodyOf(
+      await getIssue({ request: apiReq("GET", `/issues/${created.issue.id}?wsId=${wsId}`, { cookie }), params: { id: created.issue.id } }),
+    );
+    expect(restored.issue.identifier).toBe("PRO-1");
+    const redirect = sqlite.prepare("SELECT old_identifier FROM issue_redirects WHERE issue_id = ?").get(created.issue.id);
+    expect(redirect).toBeUndefined();
   });
 });
 
