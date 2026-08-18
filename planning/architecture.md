@@ -267,6 +267,18 @@ Write rule: changes within 3 min of issue creation are folded into a single "cre
 
 **issue_description_versions** — id PK, issue_id FK CASCADE (index), body_md TEXT, created_by FK users, created_at INTEGER. Snapshot on every description save (grace-window coalescing).
 
+**undo_tokens** (FM-027 bulk compensating undo)
+| column | type | notes |
+|---|---|---|
+| id | TEXT PK | opaque token returned by `POST /api/issues/bulk` |
+| workspace_id | TEXT FK CASCADE | scoping predicate (§7) |
+| actor_id | TEXT FK users CASCADE | member who issued the bulk |
+| payload | TEXT NOT NULL | json snapshots of prior issue rows + labels |
+| created_at | INTEGER | |
+| consumed_at | INTEGER NULL | set by `POST /api/undo/:token`; reuse → 409 CONFLICT |
+
+Undo is a compensating transaction: restore snapshotted fields, drop `issue_redirects` rows written by a `move_team` bulk, then mark the token consumed. Do not create this table at runtime — it is a migrated Drizzle table.
+
 **attachments** — id PK, workspace_id, issue_id FK CASCADE (index), comment_id NULL FK comments, uploader_id FK users, kind CHECK ('link','file'), url TEXT, name TEXT, size_bytes INTEGER NULL, mime TEXT NULL, local_path TEXT NULL (under `data/uploads/<wsId>/`), created_at.
 
 ### 2.4 Projects, milestones, cycles
