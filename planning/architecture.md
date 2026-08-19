@@ -872,6 +872,14 @@ Overlap rule: a module needing a change inside another module's ownership files 
 
 Recorded amendment, 2026-08-19, M1 to M4 (T-022). The T-005 remediation may edit the M1-owned files `src/lib/services/issues-events.ts`, `issues-update.ts`, `issues.ts`, `issues-bulk.ts`, and `issues-history.ts`. T-002 completed those services and no other ticket owns them today. The reason is the defect being fixed. T-005 avoided crossing this boundary by registering its progress consumer as an import side effect, and nothing on the issue-write path imports that module, so the hook is never armed in production. The workaround is the bug. Scope is the T-005 remediation plan only, and T-005's `owns:` line carries the same five files.
 
+Recorded amendment, 2026-08-19, verification tooling. The T-005 remediation adds
+`scripts/gates.mjs`, an M0-owned path, and `.github/workflows/gates.yml`, which
+§8 assigns to nobody. The reason is that every gate failure this project shipped
+got reported as green, and the mechanism was a shell pipeline discarding the
+exit code. A runner that keeps exit codes and a CI job that runs it take every
+summary out of the trust path. `.github/**` is an ownership gap in this table
+and should be assigned to M0 at the next integration checkpoint.
+
 ---
 
 ## 9. Performance Counter-Designs (vs Notion's documented root causes)
