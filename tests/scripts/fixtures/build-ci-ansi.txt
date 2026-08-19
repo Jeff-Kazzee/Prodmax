@@ -1,0 +1,20 @@
+[2m23:24:45[22m [34m[vite][39m [2mdist/client/[22m[2m_astro/[22m[36mclient.BFSmONaK.js  [39m[1m[2m182.70 kB[22m[1m[22m[2m │ gzip:  57.60 kB[22m
+[2m23:24:45[22m [34m[vite][39m [2mdist/client/[22m[2m_astro/[22m[36mapp.C6VQDKLn.js     [39m[1m[33m527.38 kB[39m[22m[2m │ gzip: 153.69 kB[22m
+[33m[1m23:24:45[22m [WARN] [vite][39m [33m
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+[2m23:24:45[22m [34m[vite][39m [32m✓ built in 2.95s[39m
+
+[42m[30m prerendering static routes [39m[49m
+[2m23:24:45[22m [32m✓ Completed in 18ms.
+[39m
+[2m23:24:45[22m [34m[build][39m Rearranging server assets...
+[2m23:24:45[22m [34m[build][39m Server built in [1m4.75s[22m
+[2m23:24:45[22m [34m[build][39m [1mComplete![22m
+
+──── check ────
+
+> prodmax@0.1.0 check
+> astro check

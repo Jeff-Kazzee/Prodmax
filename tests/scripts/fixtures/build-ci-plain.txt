@@ -1,0 +1,20 @@
+23:24:45 [vite] dist/client/_astro/client.BFSmONaK.js  182.70 kB │ gzip:  57.60 kB
+23:24:45 [vite] dist/client/_astro/app.C6VQDKLn.js     527.38 kB │ gzip: 153.69 kB
+23:24:45 [WARN] [vite] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+23:24:45 [vite] ✓ built in 2.95s
+
+ prerendering static routes 
+23:24:45 ✓ Completed in 18ms.
+
+23:24:45 [build] Rearranging server assets...
+23:24:45 [build] Server built in 4.75s
+23:24:45 [build] Complete!
+
+──── check ────
+
+> prodmax@0.1.0 check
+> astro check

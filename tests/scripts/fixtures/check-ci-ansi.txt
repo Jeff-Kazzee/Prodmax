@@ -1,0 +1,20 @@
+
+[7m36[0m   const onSubmit = async (e: React.FormEvent) => {
+[7m  [0m [93m                                   ~~~~~~~~~[0m
+
+[96msrc/lib/keyboard/hotkeys.ts[0m:[93m164[0m:[93m44[0m - [93mwarning[0m[90m ts(6385): [0m'platform' is deprecated.
+
+[7m164[0m   return /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent);
+[7m   [0m [93m                                           ~~~~~~~~[0m
+
+[96msrc/pages/api/workspaces/[id]/members/[userId]/index.ts[0m:[93m67[0m:[93m36[0m - [93mwarning[0m[90m ts(6133): [0m'actor' is declared but its value is never read.
+
+[7m67[0m   const { ctx: sessionCtx, member: actor } = requireWorkspace(ctx.request, ctx.params.id, "admin");
+[7m  [0m [93m                                   ~~~~~[0m
+
+Result (276 files): 
+- 0 errors
+- 0 warnings
+- 6 hints
+
+
