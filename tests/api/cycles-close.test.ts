@@ -190,3 +190,30 @@ describe("cycles close", () => {
     expect((await closeReq(b.cookie, b.wsId, cycle.id)).status).toBe(404);
   });
 });
+
+describe("rollover picks the next cycle chronologically", () => {
+  it("prefers the earliest start over the lowest number when they disagree", async () => {
+    const { wsId, teamId, cookie } = await env("order@x.com", "order-ws");
+    const cycle = await mkCycle(cookie, wsId, { teamId, ...activeWindow() });
+    const open = await mkIssue(cookie, wsId, teamId);
+    await scopeReq(cookie, wsId, cycle.id, { add: [open.id] });
+
+    const soonHighNumber = await mkCycle(cookie, wsId, {
+      teamId,
+      number: 9,
+      startsAt: Date.now() + 2 * HOUR,
+      endsAt: Date.now() + 3 * HOUR,
+    });
+    const laterLowNumber = await mkCycle(cookie, wsId, {
+      teamId,
+      number: 5,
+      startsAt: Date.now() + 5 * HOUR,
+      endsAt: Date.now() + 6 * HOUR,
+    });
+
+    const body = await bodyOf(await closeReq(cookie, wsId, cycle.id));
+    expect(body.rollover.nextCycleId).toBe(soonHighNumber.id);
+    expect(body.rollover.nextCycleId).not.toBe(laterLowNumber.id);
+    expect(cycleOf(open.id)).toBe(soonHighNumber.id);
+  });
+});

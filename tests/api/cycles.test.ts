@@ -158,7 +158,24 @@ describe("cycles scope", () => {
     expect(cycleOf(i2.id)).toBe(cycle.id);
   });
 
-  it("422 lists unknown, trashed, and wrong-team issue ids; nothing is applied", async () => {
+  it("bumps version per issue even when the batch holds mixed versions", async () => {
+    const { wsId, teamId, cookie } = await env();
+    const cycle = (await bodyOf(await mkCycle(cookie, wsId, { teamId, ...activeWindow() }))).cycle;
+    const i1 = await mkIssue(cookie, wsId, teamId);
+    const i2 = await mkIssue(cookie, wsId, teamId);
+    sqlite.prepare("UPDATE issues SET version = 7 WHERE id = ?").run(i2.id);
+
+    const versionOf = (id: string): number =>
+      (sqlite.prepare("SELECT version AS v FROM issues WHERE id = ?").get(id) as { v: number }).v;
+    const before1 = versionOf(i1.id);
+
+    expect((await scopeReq(cookie, wsId, cycle.id, { add: [i1.id, i2.id] })).status).toBe(200);
+
+    expect(versionOf(i1.id)).toBe(before1 + 1);
+    expect(versionOf(i2.id)).toBe(8);
+  });
+
+  it("400 lists unknown, trashed, and wrong-team issue ids; nothing is applied", async () => {
     const { wsId, teamId, cookie } = await env();
     const cycle = (await bodyOf(await mkCycle(cookie, wsId, { teamId, ...activeWindow() }))).cycle;
     const good = await mkIssue(cookie, wsId, teamId);
@@ -178,8 +195,9 @@ describe("cycles scope", () => {
     const foreign = await mkIssue(cookie, wsId, team2.id);
 
     const res = await scopeReq(cookie, wsId, cycle.id, { add: [good.id, "missing-id", trashed.id, foreign.id] });
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(400);
     const err = await bodyOf(res);
+    expect(err.error.code).toBe("VALIDATION");
     expect(err.error.details).toEqual(expect.arrayContaining(["missing-id", trashed.id, foreign.id]));
     expect(err.error.details).not.toContain(good.id);
     expect(cycleOf(good.id)).toBeNull();
@@ -222,5 +240,80 @@ describe("cycles list + workspace scoping", () => {
 
     const scoped = await scopeReq(b.cookie, b.wsId, cycle.id, { add: [] });
     expect(scoped.status).toBe(404);
+  });
+});
+
+describe("cycle status re-derived on read", () => {
+  function insertCycle(
+    wsId: string,
+    teamId: string,
+    row: { id: string; number: number; status: string; startsAt: number; snapshot?: string | null },
+  ): void {
+    sqlite
+      .prepare(
+        `INSERT INTO cycles (id, workspace_id, team_id, number, name, starts_at, ends_at, status,
+           closed_at, stats_snapshot, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+      )
+      .run(
+        row.id,
+        wsId,
+        teamId,
+        row.number,
+        `Cycle ${row.number}`,
+        row.startsAt,
+        row.startsAt + 2 * HOUR,
+        row.status,
+        row.snapshot ?? null,
+        Date.now(),
+      );
+  }
+
+  function storedStatus(id: string): string {
+    return (sqlite.prepare("SELECT status FROM cycles WHERE id = ?").get(id) as { status: string }).status;
+  }
+
+  it("promotes a started cycle to active on list and persists the derived value", async () => {
+    const { wsId, teamId, cookie } = await env("derive@x.com", "derive-ws");
+    insertCycle(wsId, teamId, { id: "cyc-stale", number: 1, status: "future", startsAt: Date.now() - HOUR });
+    expect(storedStatus("cyc-stale")).toBe("future");
+
+    const res = await listCycles({ request: apiReq("GET", `/cycles?${q(wsId, `&teamId=${teamId}`)}`, { cookie }) });
+    expect(res.status).toBe(200);
+    const listed = (await bodyOf(res)).data.find((c: { id: string }) => c.id === "cyc-stale");
+    expect(listed.status).toBe("active");
+    expect(storedStatus("cyc-stale")).toBe("active");
+  });
+
+  it("leaves a completed cycle alone whatever its window says", async () => {
+    const { wsId, teamId, cookie } = await env("done@x.com", "done-ws");
+    insertCycle(wsId, teamId, {
+      id: "cyc-done",
+      number: 1,
+      status: "completed",
+      startsAt: Date.now() - HOUR,
+      snapshot: JSON.stringify({ scope: { issues: 2, points: 4 }, completed: { issues: 1, points: 3 } }),
+    });
+
+    const res = await listCycles({ request: apiReq("GET", `/cycles?${q(wsId, `&teamId=${teamId}`)}`, { cookie }) });
+    const listed = (await bodyOf(res)).data.find((c: { id: string }) => c.id === "cyc-done");
+    expect(listed.status).toBe("completed");
+    expect(listed.stats).toEqual({ scope: { issues: 2, points: 4 }, completed: { issues: 1, points: 3 } });
+    expect(storedStatus("cyc-done")).toBe("completed");
+  });
+
+  it("serves zeroed stats for a malformed snapshot instead of 500ing the list", async () => {
+    const { wsId, teamId, cookie } = await env("bad@x.com", "bad-ws");
+    insertCycle(wsId, teamId, {
+      id: "cyc-bad",
+      number: 1,
+      status: "completed",
+      startsAt: Date.now() - HOUR,
+      snapshot: "not json at all",
+    });
+
+    const res = await listCycles({ request: apiReq("GET", `/cycles?${q(wsId, `&teamId=${teamId}`)}`, { cookie }) });
+    expect(res.status).toBe(200);
+    const listed = (await bodyOf(res)).data.find((c: { id: string }) => c.id === "cyc-bad");
+    expect(listed.stats).toEqual({ scope: { issues: 0, points: 0 }, completed: { issues: 0, points: 0 } });
   });
 });

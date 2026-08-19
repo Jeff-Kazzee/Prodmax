@@ -8,7 +8,7 @@
  * when none exists. better-sqlite3 sync calls live in this layer only;
  * every query is workspace-scoped (§7).
  */
-import { and, asc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, ne, sql } from "drizzle-orm";
 import { cycles, issues, states, teamMembers } from "@/db/schema";
 import { uuid7 } from "@/db/ids";
 import { currentDb } from "@/lib/api/db";
@@ -17,6 +17,9 @@ import type { Role } from "@/lib/api/guards";
 import type { z } from "zod";
 import type { createCycleSchema, cycleScopeSchema, patchCycleSchema } from "@/lib/validation/cycles";
 import { requireTeamInWorkspace } from "./issues-helpers";
+import { runIssueWrite } from "./issues-events";
+import { recordFieldChange } from "./issues-history";
+import type { IssueRow } from "./issues-scope";
 
 export type CreateCycleInput = z.infer<typeof createCycleSchema>;
 export type PatchCycleInput = z.infer<typeof patchCycleSchema>;
@@ -55,10 +58,35 @@ function assertCycleTeamAccess(role: Role, userId: string, teamId: string): void
   if (!mine.includes(teamId)) throw new HttpError("NOT_FOUND", "Cycle not found");
 }
 
+/**
+ * §2.4 calls status derived+stored, but nothing revisits a row once written, so
+ * a cycle that starts tomorrow reports 'future' forever. Re-derive on read and
+ * persist the difference, one statement per distinct target status. Writing on a
+ * GET is a single enum per stale row, not the counter recompute §9 forbids.
+ * 'completed' is closeCycle's alone and is never re-derived.
+ */
+function syncDerivedStatus(rows: CycleRow[]): CycleRow[] {
+  const now = Date.now();
+  const stale = new Map<"future" | "active", string[]>();
+  const synced = rows.map((row) => {
+    if (row.status === "completed") return row;
+    const derived = deriveStatus(row.startsAt, now);
+    if (derived === row.status) return row;
+    const ids = stale.get(derived);
+    if (ids) ids.push(row.id);
+    else stale.set(derived, [row.id]);
+    return { ...row, status: derived };
+  });
+  for (const [status, ids] of stale) {
+    currentDb().update(cycles).set({ status }).where(inArray(cycles.id, ids)).run();
+  }
+  return synced;
+}
+
 function requireCycle(wsId: string, id: string): CycleRow {
   const row = currentDb().select().from(cycles).where(eq(cycles.id, id)).get();
   if (!row || row.workspaceId !== wsId) throw new HttpError("NOT_FOUND", "Cycle not found");
-  return row;
+  return syncDerivedStatus([row])[0];
 }
 
 /**
@@ -101,10 +129,35 @@ function statsByCycleIds(wsId: string, ids: string[]): Map<string, CycleStats> {
   return map;
 }
 
+/** A malformed snapshot reads as empty stats rather than 500ing every list. */
+function parseStats(raw: string | null): CycleStats | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<CycleStats>;
+    const scope = parsed.scope;
+    const completed = parsed.completed;
+    if (
+      typeof scope?.issues === "number" &&
+      typeof scope.points === "number" &&
+      typeof completed?.issues === "number" &&
+      typeof completed.points === "number"
+    ) {
+      return {
+        scope: { issues: scope.issues, points: scope.points },
+        completed: { issues: completed.issues, points: completed.points },
+      };
+    }
+  } catch {
+    /* malformed snapshot → empty stats */
+  }
+  return EMPTY_STATS;
+}
+
 /** Completed cycles serve the snapshot frozen at close — never recompute (§9). */
 function statsFor(wsId: string, row: CycleRow): CycleStats {
-  if (row.status === "completed" && row.statsSnapshot) {
-    return JSON.parse(row.statsSnapshot) as CycleStats;
+  if (row.status === "completed") {
+    const frozen = parseStats(row.statsSnapshot);
+    if (frozen) return frozen;
   }
   return statsByCycleIds(wsId, [row.id]).get(row.id) ?? EMPTY_STATS;
 }
@@ -114,6 +167,11 @@ function serialize(row: CycleRow, stats: CycleStats): CycleDto {
   return { ...rest, stats };
 }
 
+/**
+ * The allocator. `teams.next_cycle_number` is dead: nothing reads or writes it.
+ * Dropping it needs a schema edit and a migration that has to serialize at the
+ * integration checkpoint, so it stays until a ticket carries that migration.
+ */
 function maxNumberForTeam(teamId: string): number {
   const row = currentDb()
     .select({ n: sql<number>`COALESCE(MAX(${cycles.number}), 0)`.mapWith(Number) })
@@ -126,23 +184,20 @@ function maxNumberForTeam(teamId: string): number {
 export function listCycles(wsId: string, actor: { userId: string; role: Role }, teamId: string): CycleDto[] {
   const team = requireTeamInWorkspace(wsId, teamId);
   assertCycleTeamAccess(actor.role, actor.userId, team.id);
-  const rows = currentDb()
-    .select()
-    .from(cycles)
-    .where(and(eq(cycles.workspaceId, wsId), eq(cycles.teamId, team.id)))
-    .orderBy(asc(cycles.number))
-    .all();
+  const rows = syncDerivedStatus(
+    currentDb()
+      .select()
+      .from(cycles)
+      .where(and(eq(cycles.workspaceId, wsId), eq(cycles.teamId, team.id)))
+      .orderBy(asc(cycles.number))
+      .all(),
+  );
   const live = statsByCycleIds(
     wsId,
     rows.filter((r) => r.status !== "completed").map((r) => r.id),
   );
   return rows.map((row) =>
-    serialize(
-      row,
-      row.status === "completed" && row.statsSnapshot
-        ? (JSON.parse(row.statsSnapshot) as CycleStats)
-        : live.get(row.id) ?? EMPTY_STATS,
-    ),
+    serialize(row, (row.status === "completed" ? parseStats(row.statsSnapshot) : null) ?? live.get(row.id) ?? EMPTY_STATS),
   );
 }
 
@@ -217,44 +272,34 @@ export function updateCycleScope(
   const add = [...new Set(input.add ?? [])];
   const remove = [...new Set(input.remove ?? [])];
   const touched = [...new Set([...add, ...remove])];
+  const latest = new Map<string, IssueRow>();
   if (touched.length > 0) {
-    const found = currentDb()
-      .select({
-        id: issues.id,
-        workspaceId: issues.workspaceId,
-        teamId: issues.teamId,
-        deletedAt: issues.deletedAt,
-      })
-      .from(issues)
-      .where(inArray(issues.id, touched))
-      .all();
-    const byId = new Map(found.map((r) => [r.id, r]));
+    const found = currentDb().select().from(issues).where(inArray(issues.id, touched)).all();
+    for (const row of found) latest.set(row.id, row);
     const offending = touched.filter((issueId) => {
-      const row = byId.get(issueId);
+      const row = latest.get(issueId);
       return !row || row.workspaceId !== wsId || row.deletedAt !== null || row.teamId !== cycle.teamId;
     });
     if (offending.length > 0) {
-      throw new HttpError("VALIDATION", "Issues must be live issues of the cycle's team", offending, 422);
+      throw new HttpError("VALIDATION", "Issues must be live issues of the cycle's team", offending);
     }
   }
   const now = Date.now();
-  currentDb().transaction(() => {
-    // remove before add: an id present in both lists ends up added.
-    if (remove.length > 0) {
-      currentDb()
-        .update(issues)
-        .set({ cycleId: null, updatedAt: now, version: sql`${issues.version} + 1` })
-        .where(and(eq(issues.cycleId, cycle.id), inArray(issues.id, remove)))
-        .run();
-    }
-    if (add.length > 0) {
-      currentDb()
-        .update(issues)
-        .set({ cycleId: cycle.id, updatedAt: now, version: sql`${issues.version} + 1` })
-        .where(inArray(issues.id, add))
-        .run();
-    }
-  });
+  runIssueWrite(
+    wsId,
+    actor.userId,
+    (w) => {
+      // remove before add: an id present in both lists ends up added.
+      const removing = remove.map((issueId) => latest.get(issueId)!).filter((row) => row.cycleId === cycle.id);
+      for (const row of removing) recordFieldChange(row, actor.userId, "cycle", row.cycleId, null, now);
+      for (const after of w.writeMany(removing, { cycleId: null, updatedAt: now })) latest.set(after.id, after);
+
+      const adding = add.map((issueId) => latest.get(issueId)!).filter((row) => row.cycleId !== cycle.id);
+      for (const row of adding) recordFieldChange(row, actor.userId, "cycle", row.cycleId, cycle.id, now);
+      w.writeMany(adding, { cycleId: cycle.id, updatedAt: now });
+    },
+    "cycle",
+  );
   const row = currentDb().select().from(cycles).where(eq(cycles.id, cycle.id)).get()!;
   const stats = statsFor(wsId, row);
   return { cycle: serialize(row, stats), scope: stats.scope };
@@ -270,16 +315,25 @@ export function closeCycle(
   if (cycle.status === "completed") throw new HttpError("CONFLICT", "Cycle is already closed");
   const now = Date.now();
 
-  const result = currentDb().transaction(() => {
+  const result = runIssueWrite(wsId, actor.userId, (w) => {
     // (1) freeze stats at close time (FM-033).
     const stats = statsByCycleIds(wsId, [cycle.id]).get(cycle.id) ?? EMPTY_STATS;
 
-    // (2) next cycle: lowest-numbered non-completed cycle after this one (FM-031).
+    // (2) next cycle: earliest non-completed cycle starting at or after this one
+    // ends (FM-031). §2.4 describes rollover chronologically, and numbers
+    // diverge from dates as soon as a cycle is created out of order.
     let next = currentDb()
       .select()
       .from(cycles)
-      .where(and(eq(cycles.teamId, cycle.teamId), gt(cycles.number, cycle.number), ne(cycles.status, "completed")))
-      .orderBy(asc(cycles.number))
+      .where(
+        and(
+          eq(cycles.teamId, cycle.teamId),
+          ne(cycles.id, cycle.id),
+          ne(cycles.status, "completed"),
+          gte(cycles.startsAt, cycle.endsAt),
+        ),
+      )
+      .orderBy(asc(cycles.startsAt))
       .limit(1)
       .get();
     let nextCycleCreated = false;
@@ -311,7 +365,7 @@ export function closeCycle(
 
     // (3) rollover: open issues (state category not completed/canceled) move on.
     const open = currentDb()
-      .select({ id: issues.id })
+      .select()
       .from(issues)
       .where(
         and(
@@ -321,13 +375,8 @@ export function closeCycle(
         ),
       )
       .all();
-    if (open.length > 0) {
-      currentDb()
-        .update(issues)
-        .set({ cycleId: next.id, updatedAt: now, version: sql`${issues.version} + 1` })
-        .where(inArray(issues.id, open.map((r) => r.id)))
-        .run();
-    }
+    for (const row of open) recordFieldChange(row, actor.userId, "cycle", cycle.id, next.id, now);
+    w.writeMany(open, { cycleId: next.id, updatedAt: now });
 
     // (4) mark completed with the frozen snapshot.
     currentDb()
@@ -336,7 +385,7 @@ export function closeCycle(
       .where(eq(cycles.id, cycle.id))
       .run();
     return { stats, rolled: open.length, nextCycleId: next.id, nextCycleCreated };
-  });
+  }, "cycle");
 
   const row = currentDb().select().from(cycles).where(eq(cycles.id, cycle.id)).get()!;
   return {

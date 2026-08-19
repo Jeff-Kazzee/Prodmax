@@ -1,7 +1,7 @@
 /**
  * POST /api/cycles/:id/scope?wsId= — {add[], remove[]}: set/clear
  * issues.cycleId in one logical operation; returns resulting scope counts.
- * Completed cycles are frozen (409); offending issue ids → 422.
+ * Completed cycles are frozen (409); offending issue ids → VALIDATION 400.
  */
 import { cycleScopeSchema } from "@/lib/validation/cycles";
 import { json, route } from "@/lib/api/errors";

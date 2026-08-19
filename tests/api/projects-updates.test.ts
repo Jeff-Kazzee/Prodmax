@@ -198,3 +198,46 @@ describe("project updates", () => {
     expect(anon.status).toBe(401);
   });
 });
+
+describe("project updates paging", () => {
+  it("caps a page at ?limit= and hands back a cursor that fetches the rest", async () => {
+    const { wsId, cookie } = await env("page@x.com", "page-ws");
+    const projectId = await makeProject(wsId, cookie, "Paged");
+    for (let i = 0; i < 60; i += 1) {
+      await postUpdate(wsId, cookie, projectId, { health: "on_track", bodyMd: `Update ${i}` });
+    }
+
+    const first = await listUpdates({
+      request: apiReq("GET", `/projects/${projectId}/updates?wsId=${wsId}&limit=25`, { cookie }),
+      params: { id: projectId },
+    });
+    expect(first.status).toBe(200);
+    const page1 = await bodyOf(first);
+    expect(page1.data).toHaveLength(25);
+    expect(page1.nextCursor).not.toBeNull();
+
+    const second = await listUpdates({
+      request: apiReq(
+        "GET",
+        `/projects/${projectId}/updates?wsId=${wsId}&limit=25&cursor=${encodeURIComponent(page1.nextCursor)}`,
+        { cookie },
+      ),
+      params: { id: projectId },
+    });
+    const page2 = await bodyOf(second);
+    expect(page2.data).toHaveLength(25);
+    expect(page2.data[0].id).not.toBe(page1.data[0].id);
+
+    const last = await listUpdates({
+      request: apiReq(
+        "GET",
+        `/projects/${projectId}/updates?wsId=${wsId}&limit=25&cursor=${encodeURIComponent(page2.nextCursor)}`,
+        { cookie },
+      ),
+      params: { id: projectId },
+    });
+    const page3 = await bodyOf(last);
+    expect(page3.data).toHaveLength(10);
+    expect(page3.nextCursor).toBeNull();
+  });
+});

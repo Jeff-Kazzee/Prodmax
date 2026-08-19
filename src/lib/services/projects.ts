@@ -4,7 +4,7 @@
  * recomputed on read (architecture §9).
  */
 import { and, asc, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
-import { projects, projectUpdates } from "@/db/schema";
+import { pages, projects, projectUpdates, workspaceMembers } from "@/db/schema";
 import { uuid7 } from "@/db/ids";
 import { generateKeyBetween } from "@/db/positions";
 import { currentDb } from "@/lib/api/db";
@@ -32,6 +32,37 @@ function lastUpdateAtByProject(wsId: string, projectId?: string): Map<string, nu
     .groupBy(projectUpdates.projectId)
     .all();
   return new Map(rows.map((r) => [r.projectId, r.last]));
+}
+
+/**
+ * Both columns are foreign keys, so an id from another workspace reaches SQLite
+ * and surfaces as a bare 500 instead of the §3 error shape. Resolve the lead
+ * through workspace membership rather than the global users table, so a user of
+ * another workspace is rejected rather than silently accepted.
+ */
+function assertReferencesInWorkspace(wsId: string, input: { leadId?: string | null; briefPageId?: string | null }): void {
+  if (input.leadId) {
+    const member = currentDb()
+      .select({ userId: workspaceMembers.userId })
+      .from(workspaceMembers)
+      .where(and(eq(workspaceMembers.workspaceId, wsId), eq(workspaceMembers.userId, input.leadId)))
+      .get();
+    if (!member) {
+      throw new HttpError("VALIDATION", "leadId must be a member of this workspace", [`leadId: ${input.leadId}`]);
+    }
+  }
+  if (input.briefPageId) {
+    const page = currentDb()
+      .select({ id: pages.id })
+      .from(pages)
+      .where(and(eq(pages.workspaceId, wsId), eq(pages.id, input.briefPageId), isNull(pages.deletedAt)))
+      .get();
+    if (!page) {
+      throw new HttpError("VALIDATION", "briefPageId must be a live page in this workspace", [
+        `briefPageId: ${input.briefPageId}`,
+      ]);
+    }
+  }
 }
 
 export function requireProject(wsId: string, id: string): ProjectRow {
@@ -82,6 +113,7 @@ function nextProjectPosition(wsId: string): string {
 }
 
 export function createProject(wsId: string, input: CreateProjectInput) {
+  assertReferencesInWorkspace(wsId, input);
   const now = Date.now();
   const id = uuid7();
   currentDb()
@@ -110,6 +142,7 @@ export function createProject(wsId: string, input: CreateProjectInput) {
 
 export function updateProject(wsId: string, id: string, input: PatchProjectInput) {
   const row = requireProject(wsId, id);
+  assertReferencesInWorkspace(wsId, input);
   const now = Date.now();
   const patch: Partial<typeof projects.$inferInsert> = { updatedAt: now };
   if (input.name !== undefined) patch.name = input.name;

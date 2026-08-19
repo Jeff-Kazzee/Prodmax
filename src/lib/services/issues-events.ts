@@ -7,7 +7,7 @@
  * buffer for the whole run and flush once, inside the transaction, to a closed
  * table of consumers.
  */
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { issues, states } from "@/db/schema";
 import { currentDb } from "@/lib/api/db";
 import type { IssueRow } from "./issues-scope";
@@ -107,7 +107,9 @@ const writerBrand = Symbol("issueWriter");
 
 export interface IssueWriter {
   readonly [writerBrand]: true;
+  /** The caller owns `version` here, because it already holds the one row. */
   write(before: IssueRow, patch: IssuePatch): IssueRow;
+  /** Bumps `version` itself. Do not pass one, it would have to be uniform. */
   writeMany(befores: IssueRow[], patch: IssuePatch): IssueRow[];
   insert(values: IssueInsert): IssueRow;
   noteState(state: StateRow): void;
@@ -160,7 +162,13 @@ function makeWriter(
       if (befores.length === 0) return [];
       const db = currentDb();
       const ids = befores.map((row) => row.id);
-      db.update(issues).set(patch).where(inArray(issues.id, ids)).run();
+      // version increments relative to each row, so one statement covers rows
+      // sitting at different versions. A caller-supplied number would have to
+      // be uniform, which a batched write cannot promise.
+      db.update(issues)
+        .set({ ...patch, version: sql`${issues.version} + 1` })
+        .where(inArray(issues.id, ids))
+        .run();
       const rows = db.select().from(issues).where(inArray(issues.id, ids)).all();
       const byId = new Map(rows.map((row) => [row.id, row]));
       return befores.map((before) => {

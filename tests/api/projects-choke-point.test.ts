@@ -23,9 +23,6 @@ const KNOWN_VIOLATIONS: Record<string, number> = {
   // T-023: PATCH and DELETE /api/states/:id change what an issue contributes
   // without writing the issue. The reassignment on DELETE is the raw write.
   "src/pages/api/states/[id]/index.ts": 1,
-  // T-005 remediation phase 9: updateCycleScope (2) and closeCycle rollover (1)
-  // still write issues directly. Phase 9 routes them through the writer.
-  "src/lib/services/cycles.ts": 3,
 };
 
 function sourceFiles(dir: string): string[] {
@@ -66,6 +63,6 @@ describe("issue-write choke-point", () => {
   it("the total is the number this gate reports", () => {
     const total = Object.values(KNOWN_VIOLATIONS).reduce((a, b) => a + b, 0);
     // 11 before phase 3. 4 after phases 3 to 6. 1 after phase 9. 0 after T-023.
-    expect(total).toBe(4);
+    expect(total).toBe(1);
   });
 });

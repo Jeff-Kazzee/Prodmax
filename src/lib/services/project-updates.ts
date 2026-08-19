@@ -8,6 +8,7 @@ import { projectUpdates } from "@/db/schema";
 import { uuid7 } from "@/db/ids";
 import { currentDb } from "@/lib/api/db";
 import { HttpError } from "@/lib/api/errors";
+import { pageParams, paginate } from "@/lib/api/paginate";
 import type { Role } from "@/lib/api/guards";
 import type { z } from "zod";
 import type { createProjectUpdateSchema } from "@/lib/validation/projects";
@@ -15,15 +16,18 @@ import { requireProject } from "./projects";
 
 export type CreateProjectUpdateInput = z.infer<typeof createProjectUpdateSchema>;
 
-/** Updates of one project, newest first (createdAt desc, id tiebreak). */
-export function listProjectUpdates(wsId: string, projectId: string) {
+/** Updates of one project, newest first (createdAt desc, id tiebreak), paged. */
+export function listProjectUpdates(wsId: string, projectId: string, request: Request) {
   requireProject(wsId, projectId);
-  return currentDb()
+  const url = new URL(request.url);
+  const { limit } = pageParams(url);
+  const rows = currentDb()
     .select()
     .from(projectUpdates)
     .where(eq(projectUpdates.projectId, projectId))
     .orderBy(desc(projectUpdates.createdAt), desc(projectUpdates.id))
     .all();
+  return paginate(rows, url.searchParams.get("cursor"), limit);
 }
 
 export function createProjectUpdate(

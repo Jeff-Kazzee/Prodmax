@@ -367,3 +367,57 @@ describe("materialized progress cache", () => {
     expect(after.c).toBe(before.c);
   });
 });
+
+describe("leadId and briefPageId resolve inside the workspace", () => {
+  it("rejects a lead from another workspace and an id that exists nowhere", async () => {
+    const a = await env("lead-a@x.com", "lead-ws-a");
+    const b = await env("lead-b@x.com", "lead-ws-b");
+
+    const foreign = await makeProject(a.wsId, a.cookie, { name: "Foreign lead", leadId: b.userId });
+    expect(foreign.res.status).toBe(400);
+    expect(foreign.body.error.code).toBe("VALIDATION");
+    expect(foreign.body.error.details).toEqual([`leadId: ${b.userId}`]);
+
+    const missing = await makeProject(a.wsId, a.cookie, { name: "Missing lead", leadId: "no-such-user" });
+    expect(missing.res.status).toBe(400);
+    expect(missing.body.error.code).toBe("VALIDATION");
+
+    const own = await makeProject(a.wsId, a.cookie, { name: "Own lead", leadId: a.userId });
+    expect(own.res.status).toBe(201);
+    expect(own.body.project.leadId).toBe(a.userId);
+
+    const patched = await patchProject({
+      request: apiReq("PATCH", `/projects/${own.body.project.id}?wsId=${a.wsId}`, {
+        cookie: a.cookie,
+        body: { leadId: b.userId },
+        test: true,
+      }),
+      params: { id: own.body.project.id },
+    });
+    expect(patched.status).toBe(400);
+    expect((await bodyOf(patched)).error.code).toBe("VALIDATION");
+    expect((await readProject(a.wsId, a.cookie, own.body.project.id)).body.project.leadId).toBe(a.userId);
+  });
+
+  it("rejects a brief page from another workspace and accepts one from this one", async () => {
+    const a = await env("brief-a@x.com", "brief-ws-a");
+    const b = await env("brief-b@x.com", "brief-ws-b");
+    const insertPage = (id: string, wsId: string, creatorId: string) =>
+      sqlite
+        .prepare(
+          `INSERT INTO pages (id, workspace_id, parent_id, path, title, creator_id, position, depth,
+             version, created_at, updated_at) VALUES (?, ?, NULL, ?, 'Brief', ?, 'a0', 0, 1, ?, ?)`,
+        )
+        .run(id, wsId, `/${id}`, creatorId, Date.now(), Date.now());
+    insertPage("page-a", a.wsId, a.userId);
+    insertPage("page-b", b.wsId, b.userId);
+
+    const foreign = await makeProject(a.wsId, a.cookie, { name: "Foreign brief", briefPageId: "page-b" });
+    expect(foreign.res.status).toBe(400);
+    expect(foreign.body.error.details).toEqual(["briefPageId: page-b"]);
+
+    const own = await makeProject(a.wsId, a.cookie, { name: "Own brief", briefPageId: "page-a" });
+    expect(own.res.status).toBe(201);
+    expect(own.body.project.briefPageId).toBe("page-a");
+  });
+});

@@ -1,6 +1,6 @@
 /**
  * GET/POST /api/projects/:id/updates?wsId= — health reports (§3.5, FM-036).
- * GET is newest-first; POST snapshots the materialized progress_cache when
+ * GET is newest-first and cursor-paged; POST snapshots progress_cache when
  * progressSnapshot is omitted.
  */
 import { createProjectUpdateSchema } from "@/lib/validation/projects";
@@ -15,7 +15,7 @@ type Ctx = { request: Request; params: Record<string, string | undefined> };
 export const GET = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
   requireWorkspace(ctx.request, wsId);
-  return json({ data: listProjectUpdates(wsId, ctx.params.id as string), nextCursor: null });
+  return json(listProjectUpdates(wsId, ctx.params.id as string, ctx.request));
 });
 
 export const POST = route(async (ctx: Ctx) => {
