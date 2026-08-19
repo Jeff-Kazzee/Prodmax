@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { IssuesEmpty } from "@/components/issues/issues-empty";
 import { useSession } from "@island/app/session";
 import { toastApiError, toastOk } from "@island/app/toast";
+import { useShellState } from "@island/components/shell/shell-state";
 import { BulkBar } from "./bulk-bar";
 import { FilterBar } from "./filter-bar";
 import { isEmptyFilter, resolveFilter } from "./filter-ast";
@@ -41,6 +42,7 @@ export function IssueViewsScreen() {
   const navigate = useNavigate();
   const params = useParams();
   const session = useSession();
+  const { openNewIssue } = useShellState();
   const wsId = session.activeWorkspace?.id ?? null;
   const userId = session.user?.id ?? "";
   const { filter, setFilter, openIssue } = useFilterUrl();
@@ -231,6 +233,7 @@ export function IssueViewsScreen() {
         onLoadMore={loadMore}
         onBoardDrop={onBoardDrop}
         onOpenIssue={openIssue}
+        onAddInColumn={(groupId) => openNewIssue({ stateId: groupId })}
         onSort={(field) => {
           if (orderBy === field) setOrderDir(orderDir === "asc" ? "desc" : "asc");
           else setOrderBy(field);

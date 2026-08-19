@@ -13,7 +13,7 @@ import { useShellState } from "./shell-state";
 
 export function KeyboardLayer() {
   const navigate = useNavigate();
-  const { openPalette, setHelpOpen, toggleCollapsed, paletteOpen, helpOpen } = useShellState();
+  const { openPalette, setHelpOpen, toggleCollapsed, paletteOpen, helpOpen, createOpen, openNewIssue, openNewIssueFull } = useShellState();
 
   const bindings = useMemo<HotkeyBinding[]>(() => {
     const base: HotkeyBinding[] = [
@@ -59,6 +59,18 @@ export function KeyboardLayer() {
           el?.focus();
         },
       },
+      {
+        keys: "c",
+        label: "New issue",
+        section: "global",
+        handler: () => openNewIssue(),
+      },
+      {
+        keys: "v",
+        label: "New issue (full editor)",
+        section: "global",
+        handler: () => openNewIssueFull(),
+      },
     ];
     for (const [suffix, path] of Object.entries(GOTO_ROUTES)) {
       base.push({
@@ -69,11 +81,11 @@ export function KeyboardLayer() {
       });
     }
     return base;
-  }, [navigate, openPalette, setHelpOpen, toggleCollapsed]);
+  }, [navigate, openPalette, setHelpOpen, toggleCollapsed, openNewIssue, openNewIssueFull]);
 
   // While an overlay is open, single-key bindings pause (§3.4: all other
   // shortcuts suppressed except Esc and palette keys). Mod chords stay live.
-  useHotkeys(bindings, !paletteOpen && !helpOpen);
+  useHotkeys(bindings, !paletteOpen && !helpOpen && !createOpen);
 
   return null;
 }

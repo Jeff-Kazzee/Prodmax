@@ -1,14 +1,7 @@
 /** Load teams/states/labels/members once per workspace for grouping + chips. */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiGet } from "@island/app/api";
-import { listLabels, listMembers, listTeamStates } from "./api";
+import { listLabels, listMembers, listTeamStates, listTeams } from "./api";
 import type { LabelOption, LookupMaps, MemberOption, StateOption, TeamOption } from "./types";
-
-interface TeamRow {
-  id: string;
-  key: string;
-  name: string;
-}
 
 export function useLookups(wsId: string | null) {
   const [teams, setTeams] = useState<TeamOption[]>([]);
@@ -20,11 +13,16 @@ export function useLookups(wsId: string | null) {
     if (!wsId) return;
     try {
       const [teamPage, labelPage, memberPage] = await Promise.all([
-        apiGet<{ data: TeamRow[] }>(`/api/teams?wsId=${encodeURIComponent(wsId)}`),
+        listTeams(wsId),
         listLabels(wsId),
         listMembers(wsId),
       ]);
-      const teamList = teamPage.data.map((t) => ({ id: t.id, key: t.key, name: t.name }));
+      const teamList = teamPage.data.map((t) => ({
+        id: t.id,
+        key: t.key,
+        name: t.name,
+        triageEnabled: t.triageEnabled,
+      }));
       setTeams(teamList);
       setLabels(labelPage.data);
       setMembers(memberPage.data);

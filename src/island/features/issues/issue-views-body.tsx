@@ -31,6 +31,7 @@ export function IssueViewsBody(props: {
   onBoardDrop: (issueId: string, groupId: string) => void;
   onOpenIssue: (identifier: string) => void;
   onSort: (field: OrderBy) => void;
+  onAddInColumn: (groupId: string) => void;
 }) {
   if (props.error) {
     return (
@@ -65,7 +66,7 @@ export function IssueViewsBody(props: {
         loading={props.loading}
         onDropIssue={props.onBoardDrop}
         onOpenIssue={props.onOpenIssue}
-        onAddInColumn={() => undefined}
+        onAddInColumn={props.onAddInColumn}
       />
     );
   }

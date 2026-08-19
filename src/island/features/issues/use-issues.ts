@@ -1,52 +1,70 @@
 /** Cursor-paged issue list with optimistic PATCH + rollback. */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FilterNode } from "@/lib/validation/views";
+import { onIssuesChanged } from "@island/features/issue-create/commands";
 import { encodeF, isEmptyFilter } from "./filter-ast";
+import { mergeFilters } from "./presets";
 import { listIssues, patchIssue } from "./api";
 import type { IssueListItem } from "./types";
+
+const HIDE_TRIAGE: FilterNode = {
+  combinator: "and",
+  children: [{ field: "statusCategory", op: "neq", value: "triage" }],
+};
 
 export function useIssuesList(opts: {
   wsId: string | null;
   filters: FilterNode;
   sort: string;
+  /** Triage inbox sets this; normal views hide triage rows (S-14). */
+  includeTriage?: boolean;
 }) {
-  const filterKey = encodeF(opts.filters);
+  const filters = useMemo(() => {
+    if (opts.includeTriage) return opts.filters;
+    return mergeFilters(HIDE_TRIAGE, opts.filters);
+  }, [opts.filters, opts.includeTriage]);
+  const filterKey = encodeF(filters);
   const { wsId, sort } = opts;
   const [items, setItems] = useState<IssueListItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const fetching = useRef(false);
+  const seq = useRef(0);
 
   const load = useCallback(
     async (cursor: string | null, append: boolean) => {
-      if (!wsId || fetching.current) return;
-      fetching.current = true;
+      if (!wsId) return;
+      const my = ++seq.current;
       if (!append) setLoading(true);
       setError(null);
       try {
         const page = await listIssues({
           wsId,
-          filters: isEmptyFilter(opts.filters) ? undefined : opts.filters,
+          filters: isEmptyFilter(filters) ? undefined : filters,
           sort,
           cursor,
         });
+        if (my !== seq.current) return;
         setItems((prev) => (append ? [...prev, ...page.data] : page.data));
         setNextCursor(page.nextCursor);
       } catch {
+        if (my !== seq.current) return;
         setError("Something broke on our side.");
       } finally {
-        fetching.current = false;
-        setLoading(false);
+        if (my === seq.current) setLoading(false);
       }
     },
-    [wsId, filterKey, sort, opts.filters],
+    [wsId, filterKey, sort, filters],
   );
 
   useEffect(() => {
     setItems([]);
     setNextCursor(null);
     void load(null, false);
+  }, [load]);
+
+  useEffect(() => {
+    return onIssuesChanged(() => void load(null, false));
   }, [load]);
 
   const loadMore = useCallback(() => {

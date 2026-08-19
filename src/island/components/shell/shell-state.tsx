@@ -9,9 +9,11 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { ReactNode } from "react";
+import type { CreatePrefill } from "@island/features/issue-create/commands";
 
 export type PaletteMode = "command" | "search";
 
@@ -21,6 +23,12 @@ const WIDTH_KEY = "pmx-sidebar-w";
 export const SIDEBAR_MIN_W = 200;
 export const SIDEBAR_MAX_W = 320;
 export const SIDEBAR_DEFAULT_W = 240;
+
+export interface CreateRequest {
+  id: number;
+  prefill: CreatePrefill;
+  full: boolean;
+}
 
 interface ShellStateValue {
   collapsed: boolean;
@@ -37,6 +45,13 @@ interface ShellStateValue {
   closePalette: () => void;
   helpOpen: boolean;
   setHelpOpen: (v: boolean) => void;
+  createRequest: CreateRequest | null;
+  createOpen: boolean;
+  openNewIssue: (prefill?: CreatePrefill) => void;
+  openNewIssueFull: (prefill?: CreatePrefill) => void;
+  closeCreate: () => void;
+  panelOpen: boolean;
+  setPanelOpen: (v: boolean) => void;
 }
 
 const ShellStateContext = createContext<ShellStateValue | null>(null);
@@ -61,6 +76,9 @@ export function ShellStateProvider({ children }: { children: ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteMode, setPaletteMode] = useState<PaletteMode>("command");
   const [helpOpen, setHelpOpen] = useState(false);
+  const [createRequest, setCreateRequest] = useState<CreateRequest | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const createSeq = useRef(0);
 
   const setCollapsed = useCallback((v: boolean) => {
     setCollapsedState(v);
@@ -92,6 +110,18 @@ export function ShellStateProvider({ children }: { children: ReactNode }) {
 
   const closePalette = useCallback(() => setPaletteOpen(false), []);
 
+  const openNewIssue = useCallback((prefill?: CreatePrefill) => {
+    createSeq.current += 1;
+    setCreateRequest({ id: createSeq.current, prefill: prefill ?? {}, full: false });
+  }, []);
+
+  const openNewIssueFull = useCallback((prefill?: CreatePrefill) => {
+    createSeq.current += 1;
+    setCreateRequest({ id: createSeq.current, prefill: prefill ?? {}, full: true });
+  }, []);
+
+  const closeCreate = useCallback(() => setCreateRequest(null), []);
+
   // Close the drawer when the viewport grows past tablet width.
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 1024px)");
@@ -117,6 +147,13 @@ export function ShellStateProvider({ children }: { children: ReactNode }) {
       closePalette,
       helpOpen,
       setHelpOpen,
+      createRequest,
+      createOpen: createRequest !== null,
+      openNewIssue,
+      openNewIssueFull,
+      closeCreate,
+      panelOpen,
+      setPanelOpen,
     }),
     [
       collapsed,
@@ -130,6 +167,11 @@ export function ShellStateProvider({ children }: { children: ReactNode }) {
       openPalette,
       closePalette,
       helpOpen,
+      createRequest,
+      openNewIssue,
+      openNewIssueFull,
+      closeCreate,
+      panelOpen,
     ],
   );
 
