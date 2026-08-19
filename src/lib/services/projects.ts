@@ -1,0 +1,138 @@
+/**
+ * Projects service (M4a, T-005): CRUD + derived last_update_at. The
+ * materialized progress caches live in ./projects-progress — importing it
+ * here arms the issue-mutation hook — and are NEVER recomputed on read
+ * (architecture §9).
+ */
+import { and, asc, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
+import { projects, projectUpdates } from "@/db/schema";
+import { uuid7 } from "@/db/ids";
+import { generateKeyBetween } from "@/db/positions";
+import { currentDb } from "@/lib/api/db";
+import { HttpError } from "@/lib/api/errors";
+import type { z } from "zod";
+import type { createProjectSchema, patchProjectSchema } from "@/lib/validation/projects";
+// This import also registers the progress-cache listener (module scope).
+import { parseProgressPoints, type ProgressPoints } from "./projects-progress";
+
+export type CreateProjectInput = z.infer<typeof createProjectSchema>;
+export type PatchProjectInput = z.infer<typeof patchProjectSchema>;
+export type ProjectRow = typeof projects.$inferSelect;
+
+function serialize(row: ProjectRow, lastUpdateAt: number | null) {
+  return { ...row, progressPoints: parseProgressPoints(row.progressPointsCache), lastUpdateAt };
+}
+
+/** last_update_at is derived (§2.4): MAX(project_updates.created_at) per project. */
+function lastUpdateAtByProject(wsId: string, projectId?: string): Map<string, number> {
+  const clauses: SQL[] = [eq(projectUpdates.workspaceId, wsId)];
+  if (projectId) clauses.push(eq(projectUpdates.projectId, projectId));
+  const rows = currentDb()
+    .select({ projectId: projectUpdates.projectId, last: sql<number>`max(${projectUpdates.createdAt})` })
+    .from(projectUpdates)
+    .where(and(...clauses))
+    .groupBy(projectUpdates.projectId)
+    .all();
+  return new Map(rows.map((r) => [r.projectId, r.last]));
+}
+
+export function requireProject(wsId: string, id: string): ProjectRow {
+  const row = currentDb().select().from(projects).where(eq(projects.id, id)).get();
+  if (!row || row.workspaceId !== wsId || row.deletedAt) {
+    throw new HttpError("NOT_FOUND", "Project not found");
+  }
+  return row;
+}
+
+/**
+ * Non-deleted projects ordered by fractional position. `?archived=` mirrors
+ * the issues list: archived rows are included by default (the flag is a
+ * payload field); archived=true|false filters to either side.
+ */
+export function listProjects(wsId: string, request: Request) {
+  const archived = new URL(request.url).searchParams.get("archived");
+  const clauses: SQL[] = [eq(projects.workspaceId, wsId), isNull(projects.deletedAt)];
+  if (archived === "true") clauses.push(isNotNull(projects.archivedAt));
+  if (archived === "false") clauses.push(isNull(projects.archivedAt));
+  const rows = currentDb()
+    .select()
+    .from(projects)
+    .where(and(...clauses))
+    .orderBy(asc(projects.position))
+    .all();
+  const lastByProject = lastUpdateAtByProject(wsId);
+  return rows.map((row) => serialize(row, lastByProject.get(row.id) ?? null));
+}
+
+/** Returns the stored materialized caches as-is — never a read-time recompute (§9). */
+export function getProject(wsId: string, id: string) {
+  const row = requireProject(wsId, id);
+  return serialize(row, lastUpdateAtByProject(wsId, id).get(id) ?? null);
+}
+
+function nextProjectPosition(wsId: string): string {
+  const last =
+    currentDb()
+      .select({ position: projects.position })
+      .from(projects)
+      .where(eq(projects.workspaceId, wsId))
+      .all()
+      .map((r) => r.position)
+      .sort()
+      .at(-1) ?? null;
+  return generateKeyBetween(last, null);
+}
+
+export function createProject(wsId: string, input: CreateProjectInput) {
+  const now = Date.now();
+  const id = uuid7();
+  currentDb()
+    .insert(projects)
+    .values({
+      id,
+      workspaceId: wsId,
+      name: input.name,
+      descriptionMd: input.descriptionMd ?? null,
+      status: input.status ?? "backlog",
+      leadId: input.leadId ?? null,
+      targetStartDate: input.targetStartDate ?? null,
+      targetEndDate: input.targetEndDate ?? null,
+      color: input.color ?? null,
+      briefPageId: input.briefPageId ?? null,
+      position: nextProjectPosition(wsId),
+      progressCache: 0,
+      progressPointsCache: JSON.stringify({ done: 0, total: 0 } satisfies ProgressPoints),
+      updateCadence: input.updateCadence ?? "off",
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+  return getProject(wsId, id);
+}
+
+export function updateProject(wsId: string, id: string, input: PatchProjectInput) {
+  const row = requireProject(wsId, id);
+  const now = Date.now();
+  const patch: Partial<typeof projects.$inferInsert> = { updatedAt: now };
+  if (input.name !== undefined) patch.name = input.name;
+  if (input.descriptionMd !== undefined) patch.descriptionMd = input.descriptionMd;
+  if (input.status !== undefined) patch.status = input.status;
+  if (input.leadId !== undefined) patch.leadId = input.leadId;
+  if (input.targetStartDate !== undefined) patch.targetStartDate = input.targetStartDate;
+  if (input.targetEndDate !== undefined) patch.targetEndDate = input.targetEndDate;
+  if (input.color !== undefined) patch.color = input.color;
+  if (input.briefPageId !== undefined) patch.briefPageId = input.briefPageId;
+  if (input.updateCadence !== undefined) patch.updateCadence = input.updateCadence;
+  if (input.archived !== undefined) patch.archivedAt = input.archived ? now : null;
+  currentDb().update(projects).set(patch).where(eq(projects.id, row.id)).run();
+  return getProject(wsId, id);
+}
+
+/** Soft delete (deleted_at), matching the issues trash convention. */
+export function trashProject(wsId: string, id: string) {
+  const row = requireProject(wsId, id);
+  const now = Date.now();
+  currentDb().update(projects).set({ deletedAt: now, updatedAt: now }).where(eq(projects.id, row.id)).run();
+  const trashed = currentDb().select().from(projects).where(eq(projects.id, row.id)).get()!;
+  return serialize(trashed, null);
+}
