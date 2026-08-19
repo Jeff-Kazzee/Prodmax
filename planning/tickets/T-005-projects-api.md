@@ -3,7 +3,7 @@
 status: claimed
 module: M4 projects & cycles
 assignee: kimi-code-swarm 2026-08-19
-owns: src/pages/api/projects/**, src/pages/api/project-updates/**, src/pages/api/milestones/**, src/pages/api/cycles/**, src/lib/services/{projects,project-updates,milestones,cycles}*, src/lib/validation/{projects,cycles}*, tests/api/{projects,cycles}*
+owns: src/pages/api/projects/**, src/pages/api/project-updates/**, src/pages/api/milestones/**, src/pages/api/cycles/**, src/lib/services/{projects,project-updates,milestones,cycles}*, src/lib/validation/{projects,cycles}*, tests/api/{projects,cycles}*, and for the remediation only, per the §8 recorded amendment of 2026-08-19: src/lib/services/issues-events.ts, src/lib/services/issues-update.ts, src/lib/services/issues.ts, src/lib/services/issues-bulk.ts, src/lib/services/issues-history.ts
 depends-on: T-002
 
 > Read `planning/tickets/README.md` first. Schema exists (projects,

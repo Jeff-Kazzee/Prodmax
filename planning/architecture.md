@@ -296,8 +296,8 @@ Undo is a compensating transaction: restore snapshotted fields, drop `issue_redi
 | color | TEXT | |
 | brief_page_id | TEXT NULL FK pages | project doc link |
 | position | TEXT NOT NULL | |
-| progress_cache | INTEGER NOT NULL DEFAULT 0 | materialized 0–100, invalidated on issue writes (§9) |
-| progress_points_cache | TEXT NULL | json {done, total} estimate-weighted |
+| progress_cache | INTEGER NOT NULL DEFAULT 0 | materialized rounded percent 0–100, derived from `issuesDone`/`issuesTotal` below, maintained on issue writes (§9) |
+| progress_points_cache | TEXT NULL | json {done, total, issuesDone, issuesTotal}. `done`/`total` stay estimate-weighted. `issuesDone`/`issuesTotal` hold live issue counts, stored so the counter can be incremented (§9) |
 | archived_at / deleted_at / created_at / updated_at | INTEGER | |
 
 **project_updates** — id PK, workspace_id, project_id FK CASCADE (index), author_id FK users, health CHECK ('on_track','at_risk','off_track'), body_md TEXT, progress_snapshot INTEGER, created_at. Reminder scheduling derived from projects.reminder_cadence? cadence lives on projects as `update_cadence TEXT CHECK ('off','daily','weekly','biweekly')` + `last_update_at` derived.
@@ -539,7 +539,7 @@ Maintained by service-layer write hooks (issue title/description/comment create-
 - Workspace selection: `?wsId=` param or the session's last-active workspace; **every** response entity is workspace-scoped server-side regardless (§7).
 - Validation: zod schemas in `src/lib/validation/**`; failure → 400 (see error shape).
 - **Error shape:** `{ "error": { "code": "VALIDATION", "message": "human summary", "details": [ …field errors or strings ] } }`
-  Codes: `AUTH_REQUIRED` 401, `FORBIDDEN` 403, `NOT_FOUND` 404, `CONFLICT` 409 (version/version conflict, slug taken), `VALIDATION` 400, `RATE_LIMITED` 429, `PAYLOAD_TOO_LARGE` 413, `INTERNAL` 500.
+  Codes: `AUTH_REQUIRED` 401, `FORBIDDEN` 403, `NOT_FOUND` 404, `CONFLICT` 409 (version/version conflict, slug taken), `VALIDATION` 400, `RATE_LIMITED` 429, `PAYLOAD_TOO_LARGE` 413, `INTERNAL` 500. This code-to-status mapping is binding. `VALIDATION` is 400 on every route, including scope conflicts. 422 is not in the set and no route may return it.
 - **Pagination:** cursor-based — `?limit=50&cursor=<opaque>`; response `{ "data": [...], "nextCursor": "…" | null }`. Cursors encode (sort_key, id) tuple, stable under inserts. List endpoints accept the shared filter params (§4.2).
 - All mutating endpoints accept `?expectedVersion=` where the entity is versioned; mismatch → 409 CONFLICT (FM-090).
 
@@ -607,7 +607,7 @@ Maintained by service-layer write hooks (issue title/description/comment create-
 | DELETE | /api/project-updates/:id | author or admin |
 | GET/POST | /api/projects/:id/milestones | |
 | PATCH/DELETE | /api/milestones/:id | |
-| GET | /api/teams/:teamId/cycles | with status + stats |
+| GET | /api/cycles?wsId=&teamId= | with status + stats. Flat rather than team-scoped, because M4 owns `src/pages/api/cycles/**` and M1 owns `src/pages/api/teams/**` per §8, so a `/api/teams/:teamId/cycles` path would straddle two modules permanently |
 | POST | /api/cycles | {teamId, number?} (scheduler also auto-creates) |
 | PATCH | /api/cycles/:id | surgery: dates, end-early (FM-032) |
 | POST | /api/cycles/:id/scope | {add[], remove[]} |
@@ -870,6 +870,8 @@ Shared constraints (binding, authored in M0/M1): `src/lib/constants.ts` (SSE eve
 
 Overlap rule: a module needing a change inside another module's ownership files a constraint amendment at the integration checkpoint — it never edits the file directly.
 
+Recorded amendment, 2026-08-19, M1 to M4 (T-022). The T-005 remediation may edit the M1-owned files `src/lib/services/issues-events.ts`, `issues-update.ts`, `issues.ts`, `issues-bulk.ts`, and `issues-history.ts`. T-002 completed those services and no other ticket owns them today. The reason is the defect being fixed. T-005 avoided crossing this boundary by registering its progress consumer as an import side effect, and nothing on the issue-write path imports that module, so the hook is never armed in production. The workaround is the bug. Scope is the T-005 remediation plan only, and T-005's `owns:` line carries the same five files.
+
 ---
 
 ## 9. Performance Counter-Designs (vs Notion's documented root causes)
@@ -878,7 +880,7 @@ Overlap rule: a module needing a change inside another module's ownership files 
 |---|---|---|
 | Block bloat: every line = a hydrated record; pages open via recursive `loadPageChunk` crawls | Page open = **one** `SELECT … WHERE page_id = ? AND deleted_at IS NULL ORDER BY parent_id, position` over the (page_id, parent_id, position) index; client builds the tree; no recursion, no N+1 | 5,000-block page open < 150 ms server time (AT-113 class) |
 | Search is server-side + permission-filtered per keystroke (6–10 s reported) | FTS5 local index (§2.10) with bm25 ranking; permission filter is a WHERE on scoped query; debounce 150 ms | < 100 ms query at 100k docs/issues (AT-062) |
-| Derived values (formulas/rollups/linked views) recompute on every load | **Materialized counters with invalidation**: `projects.progress_cache` updated in the same service write that changes an issue's completed state; cycle `stats_snapshot` frozen at close; view counts computed per page from cursor data — no load-time recompute | Insights/progress reads never scan issues at render; counter update is O(1) per write |
+| Derived values (formulas/rollups/linked views) recompute on every load | **Incremental materialized counters.** The issue mutation event carries before-state and after-state. The consumer reads the delta off the event and applies increments to `projects.progress_cache` and `progress_points_cache` in the same service write. No write path recomputes a counter from the issue rows. A full recompute exists only as a named repair and backfill entry point, used for reconciliation and for self-healing a stale row on first touch, and it never runs on the write path. Cycle `stats_snapshot` frozen at close. View counts computed per page from cursor data, no load-time recompute | Insights/progress reads never scan issues at render; counter update is O(1) per write |
 | Cloud round-trip per transaction; keystroke batches POST | Optimistic UI + SSE deltas (§5): edits render instantly, reconcile async; no saveTransaction on paint | Property edit round-trip invisible; board drag never blocks |
 | Deep page-tree sidebar sprawl | `pages.path` materialized path + depth; sidebar renders visible nodes only; favorites/recents above tree | Sidebar O(expanded nodes) |
 | Dashboards (many inline DBs) are slowest pages | `issue_view` blocks embed a saved view; data arrives via the same cursor endpoint + SSE patches, virtualized rows (react-window class), 50/page | Embedded view with 10k issues stays < 16 ms/frame (AT-113) |
