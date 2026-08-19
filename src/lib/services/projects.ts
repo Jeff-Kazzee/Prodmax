@@ -1,8 +1,7 @@
 /**
  * Projects service (M4a, T-005): CRUD + derived last_update_at. The
- * materialized progress caches live in ./projects-progress — importing it
- * here arms the issue-mutation hook — and are NEVER recomputed on read
- * (architecture §9).
+ * materialized progress caches live in ./projects-progress and are NEVER
+ * recomputed on read (architecture §9).
  */
 import { and, asc, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import { projects, projectUpdates } from "@/db/schema";
@@ -12,8 +11,7 @@ import { currentDb } from "@/lib/api/db";
 import { HttpError } from "@/lib/api/errors";
 import type { z } from "zod";
 import type { createProjectSchema, patchProjectSchema } from "@/lib/validation/projects";
-// This import also registers the progress-cache listener (module scope).
-import { parseProgressPoints, type ProgressPoints } from "./projects-progress";
+import { EMPTY_PROGRESS, parseProgressPoints } from "./projects-progress";
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type PatchProjectInput = z.infer<typeof patchProjectSchema>;
@@ -101,7 +99,7 @@ export function createProject(wsId: string, input: CreateProjectInput) {
       briefPageId: input.briefPageId ?? null,
       position: nextProjectPosition(wsId),
       progressCache: 0,
-      progressPointsCache: JSON.stringify({ done: 0, total: 0 } satisfies ProgressPoints),
+      progressPointsCache: JSON.stringify(EMPTY_PROGRESS),
       updateCadence: input.updateCadence ?? "off",
       createdAt: now,
       updatedAt: now,

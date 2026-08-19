@@ -1,4 +1,4 @@
-import { and, eq, type SQL } from "drizzle-orm";
+import { and, type SQL } from "drizzle-orm";
 import { issues } from "@/db/schema";
 import { uuid7 } from "@/db/ids";
 import { currentDb } from "@/lib/api/db";
@@ -7,7 +7,7 @@ import type { Role } from "@/lib/api/guards";
 import { pageParams, paginate } from "@/lib/api/paginate";
 import type { z } from "zod";
 import type { createIssueSchema } from "@/lib/validation/issues";
-import { recordIssueMutation } from "./issues-events";
+import { runIssueWrite } from "./issues-events";
 import { compileFilter, issueOrder, parseFiltersParam } from "./issues-filters";
 import {
   allocateIdentifier,
@@ -37,36 +37,33 @@ export function createIssue(
   const now = Date.now();
   const id = uuid7();
 
-  const created = currentDb().transaction(() => {
+  const created = runIssueWrite(wsId, actor.userId, (w) => {
     const ident = allocateIdentifier(team.id);
-    currentDb()
-      .insert(issues)
-      .values({
-        id,
-        workspaceId: wsId,
-        teamId: team.id,
-        number: ident.number,
-        identifier: ident.identifier,
-        title: input.title,
-        descriptionMd: input.descriptionMd ?? "",
-        stateId: state.id,
-        priority: input.priority ?? 0,
-        estimate: input.estimate ?? null,
-        assigneeId: input.assigneeId ?? null,
-        creatorId: actor.userId,
-        projectId: input.projectId ?? null,
-        milestoneId: input.milestoneId ?? null,
-        cycleId: input.cycleId ?? null,
-        parentId: input.parentId ?? null,
-        dueDate: input.dueDate ?? null,
-        position: nextIssuePosition(team.id),
-        version: 1,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .run();
+    w.noteState(state);
+    const row = w.insert({
+      id,
+      workspaceId: wsId,
+      teamId: team.id,
+      number: ident.number,
+      identifier: ident.identifier,
+      title: input.title,
+      descriptionMd: input.descriptionMd ?? "",
+      stateId: state.id,
+      priority: input.priority ?? 0,
+      estimate: input.estimate ?? null,
+      assigneeId: input.assigneeId ?? null,
+      creatorId: actor.userId,
+      projectId: input.projectId ?? null,
+      milestoneId: input.milestoneId ?? null,
+      cycleId: input.cycleId ?? null,
+      parentId: input.parentId ?? null,
+      dueDate: input.dueDate ?? null,
+      position: nextIssuePosition(team.id),
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
     if (input.labelIds?.length) replaceIssueLabels(wsId, id, input.labelIds);
-    const row = currentDb().select().from(issues).where(eq(issues.id, id)).get()!;
     recordCreatedHistory(row, actor.userId);
     if (row.descriptionMd) snapshotDescription(row, actor.userId, row.descriptionMd, now);
     addSubscriber(row.id, actor.userId, "created");
@@ -74,7 +71,6 @@ export function createIssue(
     return row;
   });
 
-  recordIssueMutation({ kind: "created", workspaceId: wsId, issueId: created.id, actorId: actor.userId });
   return { ...withLabels(created), suggestions: [] };
 }
 
@@ -110,11 +106,7 @@ export function trashIssue(
     throw new HttpError("CONFLICT", "Version conflict", [`expectedVersion: ${expectedVersion}`, `actual: ${issue.version}`]);
   }
   const now = Date.now();
-  currentDb()
-    .update(issues)
-    .set({ deletedAt: now, updatedAt: now, version: issue.version + 1 })
-    .where(eq(issues.id, issue.id))
-    .run();
-  recordIssueMutation({ kind: "deleted", workspaceId: wsId, issueId: issue.id, actorId: actor.userId });
-  return currentDb().select().from(issues).where(eq(issues.id, issue.id)).get()!;
+  return runIssueWrite(wsId, actor.userId, (w) =>
+    w.write(issue, { deletedAt: now, updatedAt: now, version: issue.version + 1 }),
+  );
 }

@@ -7,10 +7,33 @@ import { GET as listProjects, POST as createProject } from "@/pages/api/projects
 import { GET as getProject, PATCH as patchProject, DELETE as deleteProject } from "@/pages/api/projects/[id]";
 import { POST as createIssue } from "@/pages/api/issues/index";
 import { PATCH as patchIssue, DELETE as deleteIssue } from "@/pages/api/issues/[id]/index";
-import { syncProjectProgress } from "@/lib/services/projects-progress";
 import { apiReq, bodyOf, cookieFor, createApiDb, sessionTokenFrom, teardownApiDb } from "./helpers";
 
 let sqlite: Database.Database;
+
+/** SQL text of every statement better-sqlite3 prepares while `fn` runs. */
+async function recordStatements(fn: () => Promise<unknown>): Promise<string[]> {
+  const original = sqlite.prepare.bind(sqlite);
+  const seen: string[] = [];
+  sqlite.prepare = ((source: string) => {
+    seen.push(source);
+    return original(source);
+  }) as typeof sqlite.prepare;
+  try {
+    await fn();
+  } finally {
+    sqlite.prepare = original;
+  }
+  return seen;
+}
+
+/** EXPLAIN QUERY PLAN detail lines for one recorded statement. */
+function explain(db: Database.Database, source: string): string[] {
+  if (!/^\s*(select|insert|update|delete)/i.test(source)) return [];
+  const params = new Array((source.match(/\?/g) ?? []).length).fill(null);
+  const rows = db.prepare(`EXPLAIN QUERY PLAN ${source}`).all(...params) as Array<{ detail: string }>;
+  return rows.map((r) => r.detail);
+}
 
 beforeEach(() => {
   sqlite = createApiDb();
@@ -66,7 +89,7 @@ describe("projects CRUD", () => {
     expect(a.body.project.status).toBe("backlog");
     expect(a.body.project.updateCadence).toBe("off");
     expect(a.body.project.progressCache).toBe(0);
-    expect(a.body.project.progressPoints).toEqual({ done: 0, total: 0 });
+    expect(a.body.project.progressPoints).toEqual({ done: 0, total: 0, issuesDone: 0, issuesTotal: 0 });
     expect(a.body.project.lastUpdateAt).toBeNull();
     expect(typeof a.body.project.position).toBe("string");
 
@@ -216,18 +239,18 @@ describe("materialized progress cache", () => {
     const issue = await makeIssue(wsId, cookie, teamId, { projectId, estimate: 5 });
     let p = (await readProject(wsId, cookie, projectId)).body.project;
     expect(p.progressCache).toBe(0);
-    expect(p.progressPoints).toEqual({ done: 0, total: 5 });
+    expect(p.progressPoints).toEqual({ done: 0, total: 5, issuesDone: 0, issuesTotal: 1 });
 
     const completed = await setIssueState(wsId, cookie, issue.id, done);
     expect(completed.status).toBe(200);
     p = (await readProject(wsId, cookie, projectId)).body.project;
     expect(p.progressCache).toBe(100);
-    expect(p.progressPoints).toEqual({ done: 5, total: 5 });
+    expect(p.progressPoints).toEqual({ done: 5, total: 5, issuesDone: 1, issuesTotal: 1 });
 
     await setIssueState(wsId, cookie, issue.id, todo);
     p = (await readProject(wsId, cookie, projectId)).body.project;
     expect(p.progressCache).toBe(0);
-    expect(p.progressPoints).toEqual({ done: 0, total: 5 });
+    expect(p.progressPoints).toEqual({ done: 0, total: 5, issuesDone: 0, issuesTotal: 1 });
   });
 
   it("excludes canceled and soft-deleted issues from totals", async () => {
@@ -246,13 +269,13 @@ describe("materialized progress cache", () => {
     // i2 (canceled) is out of both counters: 5 of 5 points done → 100.
     let p = (await readProject(wsId, cookie, projectId)).body.project;
     expect(p.progressCache).toBe(100);
-    expect(p.progressPoints).toEqual({ done: 5, total: 5 });
+    expect(p.progressPoints).toEqual({ done: 5, total: 5, issuesDone: 1, issuesTotal: 1 });
 
-    // Back to an open state: 5 of 10 done → 50.
+    // Back to an open state: 5 of 10 done, 1 of 2 issues done.
     await setIssueState(wsId, cookie, i2.id, todo);
     p = (await readProject(wsId, cookie, projectId)).body.project;
     expect(p.progressCache).toBe(50);
-    expect(p.progressPoints).toEqual({ done: 5, total: 10 });
+    expect(p.progressPoints).toEqual({ done: 5, total: 10, issuesDone: 1, issuesTotal: 2 });
 
     // Trashing the completed issue leaves only the open one.
     const del = await deleteIssue({
@@ -262,7 +285,7 @@ describe("materialized progress cache", () => {
     expect(del.status).toBe(200);
     p = (await readProject(wsId, cookie, projectId)).body.project;
     expect(p.progressCache).toBe(0);
-    expect(p.progressPoints).toEqual({ done: 0, total: 5 });
+    expect(p.progressPoints).toEqual({ done: 0, total: 5, issuesDone: 0, issuesTotal: 1 });
   });
 
   it("refreshes both projects when an issue moves project or is unassigned", async () => {
@@ -273,55 +296,74 @@ describe("materialized progress cache", () => {
     const bId = b.body.project.id as string;
     const issue = await makeIssue(wsId, cookie, teamId, { projectId: aId, estimate: 3 });
 
-    // Field history is folded away inside the 3-minute create grace window;
-    // backdate the issue so the "project" change is recorded and the old
-    // project can be identified from issue_history.
-    sqlite.prepare("UPDATE issues SET created_at = ? WHERE id = ?").run(Date.now() - 200_000, issue.id);
-
     const moved = await patchIssue({
       request: apiReq("PATCH", `/issues/${issue.id}?wsId=${wsId}`, { cookie, body: { projectId: bId }, test: true }),
       params: { id: issue.id },
     });
     expect(moved.status).toBe(200);
-    expect((await readProject(wsId, cookie, aId)).body.project.progressPoints).toEqual({ done: 0, total: 0 });
-    expect((await readProject(wsId, cookie, bId)).body.project.progressPoints).toEqual({ done: 0, total: 3 });
+    expect((await readProject(wsId, cookie, aId)).body.project.progressPoints).toEqual({ done: 0, total: 0, issuesDone: 0, issuesTotal: 0 });
+    expect((await readProject(wsId, cookie, bId)).body.project.progressPoints).toEqual({ done: 0, total: 3, issuesDone: 0, issuesTotal: 1 });
 
     const unassigned = await patchIssue({
       request: apiReq("PATCH", `/issues/${issue.id}?wsId=${wsId}`, { cookie, body: { projectId: null }, test: true }),
       params: { id: issue.id },
     });
     expect(unassigned.status).toBe(200);
-    expect((await readProject(wsId, cookie, bId)).body.project.progressPoints).toEqual({ done: 0, total: 0 });
+    expect((await readProject(wsId, cookie, bId)).body.project.progressPoints).toEqual({ done: 0, total: 0, issuesDone: 0, issuesTotal: 0 });
   });
 
-  it("cache maintenance is O(1) per write, independent of issue count", async () => {
-    const { wsId, teamId, cookie, userId } = await env();
+  it("a counted write prepares no statement that scans issues, at any project size", async () => {
+    const { wsId, teamId, cookie } = await env();
     const proj = await makeProject(wsId, cookie, { name: "P" });
     const projectId = proj.body.project.id as string;
-    const first = await makeIssue(wsId, cookie, teamId, { projectId, estimate: 1 });
-    for (let i = 0; i < 30; i += 1) {
+    const done = stateIdOf(teamId, "completed");
+
+    const small = await makeIssue(wsId, cookie, teamId, { projectId, estimate: 1 });
+    const smallRun = await recordStatements(() => setIssueState(wsId, cookie, small.id, done));
+
+    for (let i = 0; i < 60; i += 1) {
       await makeIssue(wsId, cookie, teamId, { projectId, estimate: i % 4 });
     }
+    const large = await makeIssue(wsId, cookie, teamId, { projectId, estimate: 1 });
+    const largeRun = await recordStatements(() => setIssueState(wsId, cookie, large.id, done));
 
-    // Count better-sqlite3 prepare calls around the cache write path.
-    const original = sqlite.prepare.bind(sqlite);
-    let queries = 0;
-    sqlite.prepare = ((source: string) => {
-      queries += 1;
-      return original(source);
-    }) as typeof sqlite.prepare;
-    try {
-      syncProjectProgress({ kind: "updated", workspaceId: wsId, issueId: first.id, actorId: userId, patch: { title: "x" } });
-    } finally {
-      sqlite.prepare = original;
+    let planned = 0;
+    for (const source of largeRun) {
+      for (const step of explain(sqlite, source)) {
+        planned += 1;
+        expect(step, `plan scans issues: ${source}`).not.toMatch(/SCAN (TABLE )?issues\b/);
+      }
     }
-    // 1 issue PK fetch + 1 aggregate + 1 cache UPDATE — bounded regardless of
-    // the 31 issues in the project (no per-issue queries, no read of projects).
-    expect(queries).toBeLessThanOrEqual(4);
+    expect(planned).toBeGreaterThan(0);
+    expect(largeRun.length).toBe(smallRun.length);
+  });
 
-    // Sanity: the direct sync also recomputed correctly (31 issues, 0 done).
-    const p = (await readProject(wsId, cookie, projectId)).body.project;
-    expect(p.progressCache).toBe(0);
-    expect(p.progressPoints?.total).toBeGreaterThan(0);
+  it("a write that cannot move the counters touches no project row", async () => {
+    const { wsId, teamId, cookie } = await env();
+    const proj = await makeProject(wsId, cookie, { name: "P" });
+    const projectId = proj.body.project.id as string;
+    const issue = await makeIssue(wsId, cookie, teamId, { projectId, estimate: 3 });
+    const before = sqlite.prepare("SELECT progress_points_cache AS c FROM projects WHERE id = ?").get(projectId) as { c: string };
+
+    const titleEdit = await recordStatements(() =>
+      patchIssue({
+        request: apiReq("PATCH", `/issues/${issue.id}?wsId=${wsId}`, { cookie, body: { title: "Renamed" }, test: true }),
+        params: { id: issue.id },
+      }),
+    );
+    expect(titleEdit.some((sql) => /update\s+"?projects"?/i.test(sql))).toBe(false);
+
+    // Two states in the same category: the stateId moves, the contribution does not.
+    const inProgress = stateIdOf(teamId, "started");
+    const inReview = `${inProgress}-twin`;
+    sqlite
+      .prepare("INSERT INTO states (id, team_id, name, category, position, color) SELECT ?, team_id, 'In Review', category, position || 'z', color FROM states WHERE id = ?")
+      .run(inReview, inProgress);
+    await setIssueState(wsId, cookie, issue.id, inProgress);
+    const sideways = await recordStatements(() => setIssueState(wsId, cookie, issue.id, inReview));
+    expect(sideways.some((sql) => /update\s+"?projects"?/i.test(sql))).toBe(false);
+
+    const after = sqlite.prepare("SELECT progress_points_cache AS c FROM projects WHERE id = ?").get(projectId) as { c: string };
+    expect(after.c).toBe(before.c);
   });
 });
