@@ -7,7 +7,7 @@
  *
  * The section nav is four links rather than a Radix Tabs widget, because two
  * of the four are real routes. Links with `aria-current` are the honest role
- * and they deep-link; a tablist would promise tabpanels that do not exist.
+ * and they deep-link. A tablist would promise tabpanels that do not exist.
  */
 import { Link } from "react-router-dom";
 import {
@@ -22,13 +22,16 @@ import { cn } from "@/lib/utils";
 import type { MemberOption } from "@island/features/issues/types";
 import { ProgressBar } from "./progress-bar";
 import {
+  CADENCE_LABELS,
   HEALTH_LABELS,
   PROJECT_STATUSES,
   PROJECT_STATUS_LABELS,
+  UPDATE_CADENCES,
   type PatchProjectBody,
   type ProjectDto,
   type ProjectStatus,
   type ProjectUpdateDto,
+  type UpdateCadence,
 } from "./types";
 
 const HEALTH_CLASS: Record<string, string> = {
@@ -37,7 +40,17 @@ const HEALTH_CLASS: Record<string, string> = {
   off_track: "border-destructive/40 text-destructive",
 };
 
-function HealthChip({ update }: { update: ProjectUpdateDto | null }) {
+function HealthChip({ update, failed }: { update: ProjectUpdateDto | null; failed: boolean }) {
+  if (failed) {
+    return (
+      <span
+        className="rounded-sm border border-destructive/40 px-1.5 py-0.5 text-xs text-destructive"
+        data-testid="pj-health-chip"
+      >
+        Health unavailable
+      </span>
+    );
+  }
   if (!update) {
     return (
       <span
@@ -58,11 +71,23 @@ function HealthChip({ update }: { update: ProjectUpdateDto | null }) {
   );
 }
 
+/**
+ * design-system §43: an overdue bar switches its fill to danger. Overdue means
+ * the target date has passed and the work has not finished. A completed
+ * project past its target is done, not late.
+ */
+function isOverdue(project: ProjectDto, now = Date.now()): boolean {
+  if (!project.targetEndDate) return false;
+  if (project.progressCache >= 100) return false;
+  return new Date(`${project.targetEndDate}T23:59:59Z`).getTime() < now;
+}
+
 export type ProjectSection = "overview" | "issues" | "milestones" | "updates";
 
 export function ProjectChrome({
   project,
   latestUpdate,
+  updatesFailed,
   members,
   milestoneCount,
   updateCount,
@@ -72,6 +97,7 @@ export function ProjectChrome({
 }: {
   project: ProjectDto;
   latestUpdate: ProjectUpdateDto | null;
+  updatesFailed: boolean;
   members: MemberOption[];
   milestoneCount: number;
   updateCount: number;
@@ -119,7 +145,7 @@ export function ProjectChrome({
 
         <h1 className="min-w-0 truncate text-lg font-semibold tracking-tight">{project.name}</h1>
 
-        <HealthChip update={latestUpdate} />
+        <HealthChip update={latestUpdate} failed={updatesFailed} />
 
         <label className="flex items-center gap-1 text-xs">
           <span className="text-muted-foreground">Lead</span>
@@ -159,6 +185,22 @@ export function ProjectChrome({
           />
         </label>
 
+        <label className="flex items-center gap-1 text-xs">
+          <span className="text-muted-foreground">Updates</span>
+          <select
+            aria-label="Update cadence"
+            className="h-7 rounded-md border bg-transparent px-1 text-xs"
+            value={project.updateCadence}
+            onChange={(e) => onPatch({ updateCadence: e.target.value as UpdateCadence })}
+          >
+            {UPDATE_CADENCES.map((c) => (
+              <option key={c} value={c}>
+                {CADENCE_LABELS[c]}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <div className="ml-auto">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -192,6 +234,7 @@ export function ProjectChrome({
         label="Project progress"
         percent={project.progressCache}
         points={project.progressPoints}
+        overdue={isOverdue(project)}
       />
 
       <nav aria-label="Project sections" className="flex flex-wrap items-center gap-1">

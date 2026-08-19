@@ -2,10 +2,15 @@
  * PJ-02 ProgressBar (design-system §43): h-4 track, determinate only, mono
  * label row.
  *
- * The percent shown is ALWAYS the server's materialized `progress_cache`
- * (§9). This component never derives a percent from the counts, because the
- * two can legitimately disagree: the stored percent is issue-based while the
- * points pair is estimate-based.
+ * This component renders the percent it is handed and never derives one from
+ * the counts beside it, because the two can legitimately disagree: a project's
+ * stored percent is issue-based while its points pair is estimate-based.
+ *
+ * For a PROJECT the percent handed in is always the server's materialized
+ * `progress_cache` (§9), and `projects-list-screen` and `project-chrome` are
+ * the callers that guarantee it. Milestones and cycles have no such cache:
+ * their percent is derived by the caller from counts the server computed. The
+ * rule is about this component, not about every number that reaches it.
  *
  * When `points` is null the stored cache is legacy or malformed and the counts
  * are genuinely unknown, so the label says so instead of printing "0/0", which
@@ -34,7 +39,7 @@ export function progressLabelParts(
   return {
     percent: pct,
     issues: `${points.issuesDone}/${points.issuesTotal} issues`,
-    // An unestimated project has a real zero total; saying "0/0 pts" there is
+    // An unestimated project has a real zero total. Saying "0/0 pts" there is
     // accurate, but it is noise, so the points segment drops out instead.
     points: points.total === 0 ? null : `${points.done}/${points.total} pts`,
     degraded: false,
@@ -79,6 +84,7 @@ export function ProgressBar({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuetext={text}
+        data-overdue={overdue ? "true" : undefined}
         className={cn(
           "w-full overflow-hidden rounded-full bg-muted",
           size === "sm" ? "h-1.5" : "h-4",

@@ -3,7 +3,7 @@
  *
  * The composer never sends `progressSnapshot`. The server snapshots the
  * project's materialized `progress_cache` at post time, and that is the number
- * the update is a report about; a client-computed one could disagree with it.
+ * the update is a report about, and a client-computed one could disagree.
  */
 import { useState } from "react";
 import { Button } from "@island/components/ui/button";

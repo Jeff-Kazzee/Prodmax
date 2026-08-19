@@ -30,6 +30,20 @@ export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   canceled: "Canceled",
 };
 
+export const UPDATE_CADENCES: readonly UpdateCadence[] = [
+  "off",
+  "daily",
+  "weekly",
+  "biweekly",
+] as const;
+
+export const CADENCE_LABELS: Record<UpdateCadence, string> = {
+  off: "Off",
+  daily: "Daily",
+  weekly: "Weekly",
+  biweekly: "Every two weeks",
+};
+
 export const HEALTH_LABELS: Record<UpdateHealth, string> = {
   on_track: "On track",
   at_risk: "At risk",

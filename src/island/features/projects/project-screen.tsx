@@ -10,7 +10,7 @@
  * Overview, Milestones and Updates ride `?tab=` on R-18 rather than inventing
  * route ids the ux-spec §2 table does not define.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Skeleton } from "@island/components/ui/skeleton";
 import { IssuesEmpty } from "@/components/issues/issues-empty";
@@ -47,11 +47,30 @@ export function ProjectScreen() {
   const { lookup, teams } = useLookups(wsId);
   const [addOpen, setAddOpen] = useState(false);
 
+  /**
+   * Re-read the project row whenever the reader lands on Overview.
+   *
+   * Completing an issue on the Issues tab moves `progress_cache` server-side,
+   * and nothing tells this screen: the issue write path does not ring the
+   * `onIssuesChanged` bus (see use-projects.ts). Without this the progress bar
+   * shows a pre-completion percent until a hard reload. It is a single-row
+   * read and it scans no issues, so the S-15 acceptance rule still holds.
+   */
+  useEffect(() => {
+    if (section === "overview") void state.reloadProject();
+    // Deliberately keyed on the section alone. Adding `state` would refire on
+    // every render, since the hook returns a fresh object each time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section, id]);
+
   if (state.status === "missing") {
     return (
+      // The server answers NOT_FOUND for a trashed project AND for one in
+      // another workspace, so this cannot claim a deletion. Naming both is the
+      // honest reading of what the client actually knows.
       <IssuesEmpty
-        title="This project was deleted."
-        explainer="It is in the trash for 30 days."
+        title="This project is not in this workspace."
+        explainer="It was deleted, or it belongs to a workspace you have not switched to."
         actionLabel="All projects"
         onAction={() => navigate("/projects")}
       />
@@ -88,6 +107,7 @@ export function ProjectScreen() {
       <ProjectChrome
         project={project}
         latestUpdate={latestUpdate}
+        updatesFailed={state.updatesFailed}
         members={members}
         milestoneCount={state.milestones.length}
         updateCount={state.updates.length}
@@ -133,6 +153,8 @@ export function ProjectScreen() {
           project={project}
           milestones={state.milestones}
           latestUpdate={latestUpdate}
+          updatesFailed={state.updatesFailed}
+          milestonesFailed={state.milestonesFailed}
           authorName={latestUpdate ? (lookup.members[latestUpdate.authorId]?.name ?? null) : null}
           onAddIssues={() => setAddOpen(true)}
         />

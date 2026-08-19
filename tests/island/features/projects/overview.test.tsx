@@ -3,7 +3,7 @@
  * scans no issues to do it (architecture §9).
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "@island/app";
 import { installResizeObserver } from "../../../shell/helpers";
 import { gotoHome, gotoProject, mockProjectRoutes, projectFixture } from "./helpers";
@@ -11,6 +11,12 @@ import { gotoHome, gotoProject, mockProjectRoutes, projectFixture } from "./help
 installResizeObserver();
 
 afterEach(() => {
+  // Unmount BEFORE unstubbing fetch. Vitest runs a file's after-hooks ahead of
+  // the global one in tests/setup.ts, so without this the React tree is torn
+  // down after `fetch` is real again, and any request in flight during unmount
+  // escapes to the network. That also leaves Radix overlays half-torn-down,
+  // which is what made these files depend on declaration order.
+  cleanup();
   vi.unstubAllGlobals();
   window.localStorage.clear();
 });
@@ -70,7 +76,47 @@ describe("project overview renders cached progress", () => {
     expect(issueCalls).toEqual([]);
   });
 
-  it("renders the deleted-project state on a 404 rather than spinning", async () => {
+  it("marks the bar overdue only when the target has passed and work remains", async () => {
+    // design-system §43: an overdue bar switches its fill to danger. A
+    // finished project past its target is done, not late, so the completed
+    // case is what stops this being "any past date turns the bar red".
+    const { issueCalls } = mockProjectRoutes({
+      "GET /api/projects/p1": {
+        project: projectFixture({ targetEndDate: "2020-01-01", progressCache: 62 }),
+      },
+    });
+    render(<App />);
+    await gotoHome();
+    issueCalls.length = 0;
+    await gotoProject();
+
+    expect(await screen.findByRole("progressbar", { name: "Project progress" })).toHaveAttribute(
+      "data-overdue",
+      "true",
+    );
+  });
+
+  it("does not mark a finished project overdue, however old its target", async () => {
+    const { issueCalls } = mockProjectRoutes({
+      "GET /api/projects/p1": {
+        project: projectFixture({
+          targetEndDate: "2020-01-01",
+          progressCache: 100,
+          progressPoints: { done: 78, total: 78, issuesDone: 31, issuesTotal: 31 },
+        }),
+      },
+    });
+    render(<App />);
+    await gotoHome();
+    issueCalls.length = 0;
+    await gotoProject();
+
+    expect(await screen.findByRole("progressbar", { name: "Project progress" })).not.toHaveAttribute(
+      "data-overdue",
+    );
+  });
+
+  it("does not claim a deletion for an id the workspace cannot see", async () => {
     // A fresh Response per call: a body can only be read once, and this route
     // is hit again whenever the issue bus fires.
     const { issueCalls } = mockProjectRoutes({
@@ -85,6 +131,11 @@ describe("project overview renders cached progress", () => {
     issueCalls.length = 0;
     await gotoProject();
 
-    expect(await screen.findByText("This project was deleted.")).toBeInTheDocument();
+    // NOT_FOUND covers a trashed project and a cross-workspace one alike, so
+    // the copy must not pick one. A user pasting a colleague's link is in the
+    // wrong workspace, not looking at something deleted.
+    expect(
+      await screen.findByText("This project is not in this workspace."),
+    ).toBeInTheDocument();
   });
 });

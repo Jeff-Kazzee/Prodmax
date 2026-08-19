@@ -3,7 +3,7 @@
  * re-reads, and the header health chip follows the newest update.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "@island/app";
 import { installResizeObserver } from "../../../shell/helpers";
 import { gotoHome, gotoProject, mockProjectRoutes, updateFixture } from "./helpers";
@@ -11,6 +11,12 @@ import { gotoHome, gotoProject, mockProjectRoutes, updateFixture } from "./helpe
 installResizeObserver();
 
 afterEach(() => {
+  // Unmount BEFORE unstubbing fetch. Vitest runs a file's after-hooks ahead of
+  // the global one in tests/setup.ts, so without this the React tree is torn
+  // down after `fetch` is real again, and any request in flight during unmount
+  // escapes to the network. That also leaves Radix overlays half-torn-down,
+  // which is what made these files depend on declaration order.
+  cleanup();
   vi.unstubAllGlobals();
   window.localStorage.clear();
 });
@@ -48,7 +54,21 @@ describe("project updates", () => {
 
     // The server rejects an empty bodyMd with a 400, so the button must not
     // let the request leave in the first place.
-    expect(screen.getByRole("button", { name: "Post update" })).toBeDisabled();
+    const post = screen.getByRole("button", { name: "Post update" });
+    expect(post).toBeDisabled();
+
+    // Whitespace is still empty once trimmed.
+    fireEvent.change(screen.getByRole("textbox", { name: "Update body" }), {
+      target: { value: "   " },
+    });
+    expect(post).toBeDisabled();
+
+    // And it must actually enable, or the assertions above would pass against
+    // a button that is simply always disabled.
+    fireEvent.change(screen.getByRole("textbox", { name: "Update body" }), {
+      target: { value: "Real body" },
+    });
+    expect(post).toBeEnabled();
   });
 
   it("posts the health the picker shows, then re-reads the feed and the header", async () => {
@@ -86,6 +106,34 @@ describe("project updates", () => {
 
     // Posting an update is not an issue write, so it must not scan issues.
     expect(issueCalls).toEqual([]);
+  });
+
+  it("says the read failed instead of reporting no updates", async () => {
+    // A 500 must never render as a health claim. "No update yet" on a failed
+    // read tells the reader this project has posted nothing, which is a
+    // statement about their data invented out of a network error.
+    const { issueCalls } = mockProjectRoutes({
+      "GET /api/projects/p1/updates": () =>
+        new Response(JSON.stringify({ error: { code: "INTERNAL", message: "boom" } }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        }),
+      "GET /api/projects/p1/milestones": () =>
+        new Response(JSON.stringify({ error: { code: "INTERNAL", message: "boom" } }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+    render(<App />);
+    await gotoHome();
+    issueCalls.length = 0;
+    await gotoProject();
+
+    expect(await screen.findByTestId("pj-health-chip")).toHaveTextContent("Health unavailable");
+    expect(screen.getByText("Updates did not load.")).toBeInTheDocument();
+    expect(screen.getByText("Milestones did not load.")).toBeInTheDocument();
+    expect(screen.queryByText("No updates posted yet.")).toBeNull();
+    expect(screen.queryByText("No milestones yet.")).toBeNull();
   });
 
   it("omits progressSnapshot so the server snapshots its own cache", async () => {

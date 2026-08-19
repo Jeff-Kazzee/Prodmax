@@ -115,9 +115,19 @@ export function AddIssuesDialog({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
+          {/*
+            There is no issue search endpoint, so this filters the most
+            recently updated page on the client. The copy says so rather than
+            claiming the issue does not exist. Create below always works.
+          */}
+          <p className="text-xs text-muted-foreground">
+            Searches the most recently updated issues, not the whole workspace.
+          </p>
           <ul className="max-h-56 overflow-y-auto rounded-md border">
             {rows.length === 0 ? (
-              <li className="px-2 py-3 text-sm text-muted-foreground">No issues match.</li>
+              <li className="px-2 py-3 text-sm text-muted-foreground">
+                No match among the recent issues. Create one below instead.
+              </li>
             ) : (
               rows.map((issue) => (
                 <li key={issue.id} className="flex items-center gap-2 border-b px-2 py-1.5 last:border-b-0">

@@ -68,6 +68,8 @@ export function OverviewTab({
   project,
   milestones,
   latestUpdate,
+  updatesFailed,
+  milestonesFailed,
   authorName,
   onAddIssues,
   now = Date.now(),
@@ -75,6 +77,8 @@ export function OverviewTab({
   project: ProjectDto;
   milestones: MilestoneDto[];
   latestUpdate: ProjectUpdateDto | null;
+  updatesFailed: boolean;
+  milestonesFailed: boolean;
   authorName: string | null;
   onAddIssues: () => void;
   now?: number;
@@ -87,7 +91,9 @@ export function OverviewTab({
   return (
     <div className="min-h-0 flex-1 overflow-y-auto" data-tab="overview">
       <Section title="Milestones">
-        {milestones.length === 0 ? (
+        {milestonesFailed ? (
+          <p className="text-sm text-destructive">Milestones did not load.</p>
+        ) : milestones.length === 0 ? (
           <p className="text-sm text-muted-foreground">No milestones yet.</p>
         ) : (
           <p className="text-sm">
@@ -134,6 +140,8 @@ export function OverviewTab({
               dangerouslySetInnerHTML={{ __html: renderMarkdown(latestUpdate.bodyMd) }}
             />
           </div>
+        ) : updatesFailed ? (
+          <p className="text-sm text-destructive">Updates did not load.</p>
         ) : (
           <p className="text-sm text-muted-foreground">No updates posted yet.</p>
         )}

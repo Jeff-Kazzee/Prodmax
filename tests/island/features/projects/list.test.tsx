@@ -3,7 +3,7 @@
  * status PATCH that moves a row between groups.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import App from "@island/app";
 import { installResizeObserver } from "../../../shell/helpers";
 import { gotoHome, gotoProjects, mockProjectRoutes, projectFixture } from "./helpers";
@@ -11,6 +11,12 @@ import { gotoHome, gotoProjects, mockProjectRoutes, projectFixture } from "./hel
 installResizeObserver();
 
 afterEach(() => {
+  // Unmount BEFORE unstubbing fetch. Vitest runs a file's after-hooks ahead of
+  // the global one in tests/setup.ts, so without this the React tree is torn
+  // down after `fetch` is real again, and any request in flight during unmount
+  // escapes to the network. That also leaves Radix overlays half-torn-down,
+  // which is what made these files depend on declaration order.
+  cleanup();
   vi.unstubAllGlobals();
   window.localStorage.clear();
 });
@@ -79,19 +85,25 @@ describe("projects list", () => {
     expect(within(completed).getByRole("link", { name: "Checkout rewrite" })).toBeInTheDocument();
   });
 
-  it("ships no reorder control, because the PATCH has no position field", async () => {
-    const { sent } = mockProjectRoutes({
-      "GET /api/projects": { data: TWO_PROJECTS, nextCursor: null },
-    });
+  it("ships no reorder affordance, because the PATCH has no position field", async () => {
+    mockProjectRoutes({ "GET /api/projects": { data: TWO_PROJECTS, nextCursor: null } });
     render(<App />);
     await gotoProjects();
-    await screen.findByRole("link", { name: "Checkout rewrite" });
+    const row = await screen.findByRole("link", { name: "Checkout rewrite" });
 
-    // T-028 tracks the API gap. Until it lands, a drag handle here would be a
-    // control that persists nowhere, which AGENTS.md forbids. This assertion
-    // is what stops one being added back without the endpoint.
-    expect(screen.queryByRole("button", { name: /reorder|drag/i })).toBeNull();
-    expect(sent.filter((s) => s.key.startsWith("PATCH /api/projects"))).toEqual([]);
+    // T-028 tracks the API gap. A drag handle here would persist nowhere,
+    // which AGENTS.md forbids.
+    //
+    // The previous version of this test asserted that no PATCH was recorded
+    // without touching anything, which no implementation could fail. These
+    // assertions are about markup that would actually exist if a drag were
+    // added: a real handle is a draggable node or a grip button, and neither
+    // is named "reorder" often enough to catch by accessible name alone.
+    const listItem = row.closest("li");
+    expect(listItem).not.toBeNull();
+    expect(document.querySelectorAll('[draggable="true"]')).toHaveLength(0);
+    expect(listItem?.getAttribute("draggable")).toBeNull();
+    expect(screen.queryByRole("button", { name: /reorder|drag|move up|move down/i })).toBeNull();
   });
 
   it("offers the empty state when the workspace has no projects", async () => {
