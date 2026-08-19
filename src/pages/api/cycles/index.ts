@@ -24,7 +24,7 @@ export const GET = route(async (ctx: Ctx) => {
 
 export const POST = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
-  const { member } = requireWorkspace(ctx.request, wsId);
+  const { member } = requireWorkspace(ctx.request, wsId, "member");
   const body = await parseBody(ctx.request, createCycleSchema);
   return json({ cycle: createCycle(wsId, member, body) }, 201);
 });

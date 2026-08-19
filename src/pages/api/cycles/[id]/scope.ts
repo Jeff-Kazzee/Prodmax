@@ -14,7 +14,7 @@ type Ctx = { request: Request; params: Record<string, string | undefined> };
 
 export const POST = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
-  const { member } = requireWorkspace(ctx.request, wsId);
+  const { member } = requireWorkspace(ctx.request, wsId, "member");
   const body = await parseBody(ctx.request, cycleScopeSchema);
   return json(updateCycleScope(wsId, member, ctx.params.id as string, body));
 });

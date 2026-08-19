@@ -20,13 +20,13 @@ export const GET = route(async (ctx: Ctx) => {
 
 export const PATCH = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
-  requireWorkspace(ctx.request, wsId);
+  requireWorkspace(ctx.request, wsId, "member");
   const body = await parseBodyOptional(ctx.request, patchProjectSchema);
   return json({ project: updateProject(wsId, ctx.params.id as string, body) });
 });
 
 export const DELETE = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
-  requireWorkspace(ctx.request, wsId);
+  requireWorkspace(ctx.request, wsId, "member");
   return json({ project: trashProject(wsId, ctx.params.id as string) });
 });

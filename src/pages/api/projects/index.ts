@@ -16,7 +16,7 @@ export const GET = route(async (ctx: Ctx) => {
 
 export const POST = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
-  requireWorkspace(ctx.request, wsId);
+  requireWorkspace(ctx.request, wsId, "member");
   const body = await parseBody(ctx.request, createProjectSchema);
   return json({ project: createProject(wsId, body) }, 201);
 });

@@ -20,7 +20,7 @@ export const GET = route(async (ctx: Ctx) => {
 
 export const POST = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
-  const { member } = requireWorkspace(ctx.request, wsId);
+  const { member } = requireWorkspace(ctx.request, wsId, "member");
   const body = await parseBody(ctx.request, createProjectUpdateSchema);
   return json({ update: createProjectUpdate(wsId, member, ctx.params.id as string, body) }, 201);
 });

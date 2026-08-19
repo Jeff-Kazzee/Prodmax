@@ -12,6 +12,6 @@ type Ctx = { request: Request; params: Record<string, string | undefined> };
 
 export const POST = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
-  const { member } = requireWorkspace(ctx.request, wsId);
+  const { member } = requireWorkspace(ctx.request, wsId, "member");
   return json(closeCycle(wsId, member, ctx.params.id as string));
 });

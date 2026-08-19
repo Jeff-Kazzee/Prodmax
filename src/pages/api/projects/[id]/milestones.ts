@@ -21,7 +21,7 @@ export const GET = route(async (ctx: Ctx) => {
 
 export const POST = route(async (ctx: Ctx) => {
   const project = requireLiveProject(ctx.params.id as string);
-  requireWorkspace(ctx.request, project.workspaceId);
+  requireWorkspace(ctx.request, project.workspaceId, "member");
   const body = await parseBody(ctx.request, createMilestoneSchema);
   return json({ milestone: createMilestone(project.workspaceId, project.id, body) }, 201);
 });

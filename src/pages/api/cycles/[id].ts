@@ -14,7 +14,7 @@ type Ctx = { request: Request; params: Record<string, string | undefined> };
 
 export const PATCH = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
-  const { member } = requireWorkspace(ctx.request, wsId);
+  const { member } = requireWorkspace(ctx.request, wsId, "member");
   const body = await parseBodyOptional(ctx.request, patchCycleSchema);
   return json({ cycle: patchCycle(wsId, member, ctx.params.id as string, body) });
 });

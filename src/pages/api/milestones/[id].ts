@@ -15,13 +15,13 @@ type Ctx = { request: Request; params: Record<string, string | undefined> };
 
 export const PATCH = route(async (ctx: Ctx) => {
   const scoped = requireMilestoneForScope(ctx.params.id as string);
-  requireWorkspace(ctx.request, scoped.workspaceId);
+  requireWorkspace(ctx.request, scoped.workspaceId, "member");
   const body = await parseBodyOptional(ctx.request, patchMilestoneSchema);
   return json({ milestone: updateMilestone(scoped.workspaceId, scoped.id, body) });
 });
 
 export const DELETE = route(async (ctx: Ctx) => {
   const scoped = requireMilestoneForScope(ctx.params.id as string);
-  requireWorkspace(ctx.request, scoped.workspaceId);
+  requireWorkspace(ctx.request, scoped.workspaceId, "member");
   return json({ milestone: trashMilestone(scoped.workspaceId, scoped.id) });
 });
