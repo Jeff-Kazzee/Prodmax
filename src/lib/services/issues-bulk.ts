@@ -1,15 +1,15 @@
 import { and, eq } from "drizzle-orm";
-import { issueRedirects, issues, undoTokens } from "@/db/schema";
+import { issueRedirects, undoTokens } from "@/db/schema";
 import { uuid7 } from "@/db/ids";
 import { currentDb } from "@/lib/api/db";
 import { HttpError } from "@/lib/api/errors";
 import type { Role } from "@/lib/api/guards";
 import type { z } from "zod";
 import type { bulkIssueSchema } from "@/lib/validation/issues";
-import { recordIssueMutation } from "./issues-events";
+import { runIssueWrite, type IssueWriter } from "./issues-events";
 import { labelIdsOf, latestIssue, replaceIssueLabels } from "./issues-helpers";
 import { requireLiveIssue, type IssueRow } from "./issues-scope";
-import { moveIssueTeam, restoreIssue, updateIssue } from "./issues-update";
+import { moveIssueTeam, updateIssue } from "./issues-update";
 import { trashIssue } from "./issues";
 
 export type BulkInput = z.infer<typeof bulkIssueSchema>;
@@ -104,27 +104,22 @@ function applyAction(
   }
 }
 
-function restoreSnapshot(wsId: string, snap: UndoSnapshot): void {
+function restoreSnapshot(w: IssueWriter, wsId: string, snap: UndoSnapshot): void {
   const current = latestIssue(snap.id);
-  if (snap.deletedAt === null && current.deletedAt) restoreIssue(snap.id);
-  currentDb()
-    .update(issues)
-    .set({
-      teamId: snap.teamId,
-      identifier: snap.identifier,
-      number: snap.number,
-      stateId: snap.stateId,
-      assigneeId: snap.assigneeId,
-      priority: snap.priority,
-      projectId: snap.projectId,
-      cycleId: snap.cycleId,
-      archivedAt: snap.archivedAt,
-      deletedAt: snap.deletedAt,
-      version: snap.version,
-      updatedAt: Date.now(),
-    })
-    .where(eq(issues.id, snap.id))
-    .run();
+  w.write(current, {
+    teamId: snap.teamId,
+    identifier: snap.identifier,
+    number: snap.number,
+    stateId: snap.stateId,
+    assigneeId: snap.assigneeId,
+    priority: snap.priority,
+    projectId: snap.projectId,
+    cycleId: snap.cycleId,
+    archivedAt: snap.archivedAt,
+    deletedAt: snap.deletedAt,
+    version: snap.version,
+    updatedAt: Date.now(),
+  });
   replaceIssueLabels(wsId, snap.id, snap.labelIds);
   currentDb()
     .delete(issueRedirects)
@@ -137,7 +132,7 @@ export function bulkUpdateIssues(
   actor: { userId: string; role: Role },
   input: BulkInput,
 ): { undoToken: string; updated: number } {
-  return currentDb().transaction(() => {
+  return runIssueWrite(wsId, actor.userId, () => {
     const snapshots: UndoSnapshot[] = [];
     for (const id of input.ids) {
       const issue = requireLiveIssue(wsId, id, actor.role, actor.userId);
@@ -156,36 +151,22 @@ export function bulkUpdateIssues(
         consumedAt: null,
       })
       .run();
-    recordIssueMutation({
-      kind: "updated",
-      workspaceId: wsId,
-      issueId: input.ids[0],
-      actorId: actor.userId,
-      patch: { bulk: input.action },
-    });
     return { undoToken: token, updated: snapshots.length };
-  });
+  }, "bulk");
 }
 
 export function applyUndo(wsId: string, actorId: string, token: string): { restored: number } {
-  return currentDb().transaction(() => {
+  return runIssueWrite(wsId, actorId, (w) => {
     const row = currentDb().select().from(undoTokens).where(eq(undoTokens.id, token)).get();
     if (!row || row.workspaceId !== wsId) throw new HttpError("NOT_FOUND", "Undo token not found");
     if (row.consumedAt) throw new HttpError("CONFLICT", "Undo token already used");
     const payload = JSON.parse(row.payload) as UndoPayload;
-    for (const snap of payload.snapshots) restoreSnapshot(wsId, snap);
+    for (const snap of payload.snapshots) restoreSnapshot(w, wsId, snap);
     currentDb()
       .update(undoTokens)
       .set({ consumedAt: Date.now() })
       .where(eq(undoTokens.id, token))
       .run();
-    recordIssueMutation({
-      kind: "updated",
-      workspaceId: wsId,
-      issueId: payload.snapshots[0]?.id ?? token,
-      actorId,
-      patch: { undo: true },
-    });
     return { restored: payload.snapshots.length };
-  });
+  }, "undo");
 }

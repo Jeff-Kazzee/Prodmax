@@ -1,8 +1,9 @@
 import { desc, eq } from "drizzle-orm";
-import { issueDescriptionVersions, issueHistory, issues } from "@/db/schema";
+import { issueDescriptionVersions, issueHistory } from "@/db/schema";
 import { uuid7 } from "@/db/ids";
 import { currentDb } from "@/lib/api/db";
 import { HttpError } from "@/lib/api/errors";
+import { runIssueWrite } from "./issues-events";
 import type { IssueRow } from "./issues-scope";
 
 export const HISTORY_GRACE_MS = 3 * 60 * 1000;
@@ -117,12 +118,10 @@ export function restoreDescriptionVersion(issue: IssueRow, versionId: string, ac
     .where(eq(issueDescriptionVersions.id, versionId))
     .get();
   if (!version || version.issueId !== issue.id) throw new HttpError("NOT_FOUND", "Description version not found");
-  currentDb()
-    .update(issues)
-    .set({ descriptionMd: version.bodyMd, updatedAt: now, version: issue.version + 1 })
-    .where(eq(issues.id, issue.id))
-    .run();
-  snapshotDescription(issue, actorId, version.bodyMd, now);
-  recordFieldChange(issue, actorId, "description", issue.descriptionMd, version.bodyMd, now);
+  runIssueWrite(issue.workspaceId, actorId, (w) => {
+    w.write(issue, { descriptionMd: version.bodyMd, updatedAt: now, version: issue.version + 1 });
+    snapshotDescription(issue, actorId, version.bodyMd, now);
+    recordFieldChange(issue, actorId, "description", issue.descriptionMd, version.bodyMd, now);
+  });
   return version.bodyMd;
 }

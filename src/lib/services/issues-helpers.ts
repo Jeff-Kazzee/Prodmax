@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { issueLabels, issues, labels, states, teams } from "@/db/schema";
+import { cycles, issueLabels, issues, labels, milestones, projects, states, teams } from "@/db/schema";
 import { generateKeyBetween } from "@/db/positions";
 import { currentDb } from "@/lib/api/db";
 import { HttpError } from "@/lib/api/errors";
@@ -31,6 +31,48 @@ export function requireTeamInWorkspace(wsId: string, teamId: string): typeof tea
   const team = currentDb().select().from(teams).where(eq(teams.id, teamId)).get();
   if (!team || team.workspaceId !== wsId) throw new HttpError("NOT_FOUND", "Team not found");
   return team;
+}
+
+/**
+ * Parenting ids arrive on the request body and the foreign keys only require
+ * the row to exist somewhere, so without this a member of one workspace can
+ * attach an issue to another workspace's project. The message never says
+ * whether the id exists elsewhere.
+ */
+function rejectParent(kind: string, id: string): never {
+  throw new HttpError("VALIDATION", `Not a valid ${kind} for this workspace`, [`${kind}Id: ${id}`]);
+}
+
+/** Validate whichever of the three parenting ids the caller actually sent. */
+export function assertParentsInWorkspace(
+  wsId: string,
+  input: { projectId?: string | null; milestoneId?: string | null; cycleId?: string | null },
+): void {
+  const db = currentDb();
+  if (input.projectId) {
+    const row = db
+      .select({ workspaceId: projects.workspaceId, deletedAt: projects.deletedAt })
+      .from(projects)
+      .where(eq(projects.id, input.projectId))
+      .get();
+    if (!row || row.workspaceId !== wsId || row.deletedAt !== null) rejectParent("project", input.projectId);
+  }
+  if (input.milestoneId) {
+    const row = db
+      .select({ workspaceId: milestones.workspaceId, deletedAt: milestones.deletedAt })
+      .from(milestones)
+      .where(eq(milestones.id, input.milestoneId))
+      .get();
+    if (!row || row.workspaceId !== wsId || row.deletedAt !== null) rejectParent("milestone", input.milestoneId);
+  }
+  if (input.cycleId) {
+    const row = db
+      .select({ workspaceId: cycles.workspaceId })
+      .from(cycles)
+      .where(eq(cycles.id, input.cycleId))
+      .get();
+    if (!row || row.workspaceId !== wsId) rejectParent("cycle", input.cycleId);
+  }
 }
 
 export function requireStateOnTeam(teamId: string, stateId: string): typeof states.$inferSelect {
