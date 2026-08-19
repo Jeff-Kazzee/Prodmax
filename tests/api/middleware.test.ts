@@ -65,6 +65,22 @@ describe("middleware /api/* gate", () => {
     expect(await res.text()).toBe("next-ok");
   });
 
+  it("allows localhost Origin when request.url is the loopback listen address", async () => {
+    const token = await makeToken();
+    const request = new Request("http://127.0.0.1:4321/api/users/me", {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        cookie: cookieFor(token),
+        origin: "http://localhost:4321",
+        host: "localhost:4321",
+      },
+      body: JSON.stringify({ name: "X" }),
+    });
+    const { res } = await run(request);
+    expect(res.status).toBe(200);
+  });
+
   it("skips the CSRF check for x-prodmax-test outside production", async () => {
     const token = await makeToken();
     const { res } = await run(apiReq("POST", "/auth/logout", { cookie: cookieFor(token), origin: "http://evil.example", test: true }));
