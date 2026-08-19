@@ -9,7 +9,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@island/components/ui/tooltip";
-import { PRIMARY_NAV } from "./nav-items";
+import { MORE_NAV, PRIMARY_NAV } from "./nav-items";
 import { useShellState } from "./shell-state";
 import { useTeamsData } from "./use-workspace-data";
 
@@ -37,7 +37,8 @@ export function SidebarRail({ onExpand }: { onExpand?: () => void }) {
       </Tooltip>
 
       <nav aria-label="Workspace sections" className="mt-1 flex flex-col items-stretch">
-        {PRIMARY_NAV.map((item) => (
+        {/* Same set as the expanded sidebar, or collapsing it hides routes. */}
+        {[...PRIMARY_NAV, ...MORE_NAV].map((item) => (
           <Tooltip key={item.id}>
             <TooltipTrigger asChild>
               <NavLink

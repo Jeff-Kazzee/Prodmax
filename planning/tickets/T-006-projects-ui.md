@@ -1,8 +1,8 @@
 # T-006 — M4b Projects/cycles UI
 
-status: open
+status: claimed
 module: M4 projects & cycles
-assignee: —
+assignee: claude-opus-5 session 6858dcdc, 2026-08-19
 owns: src/island/features/projects/**, src/island/features/cycles/**, edits to src/island/app/routes.ts (route swaps only), tests/island/features/{projects,cycles}*
 depends-on: T-005, T-003
 

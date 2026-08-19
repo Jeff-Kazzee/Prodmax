@@ -64,7 +64,21 @@ test("project progress follows the issue that lands in it", async ({ page }) => 
   await row.getByRole("link").first().click();
   const panel = page.getByRole("complementary", { name: "Issue details" });
   await expect(panel).toBeVisible();
+  // Wait for the PATCH to land before navigating. `selectOption` returns as
+  // soon as the change event is dispatched, and the app's PATCH is
+  // fire-and-forget, so a `goto` on the next line can cancel the very write
+  // this test exists to prove. That would fail as a wrong progress bar rather
+  // than as a lost request, which is exactly the kind of green-or-red-by-luck
+  // this repo keeps getting caught by.
+  const statePatch = page.waitForResponse(
+    (res) =>
+      res.request().method() === "PATCH" && /\/api\/issues\//.test(new URL(res.url()).pathname),
+  );
   await panel.getByLabel("State").selectOption({ label: "Done" });
+  const patched = await statePatch;
+  if (!patched.ok()) {
+    throw new Error(`state PATCH ${patched.status()}: ${await patched.text()}`);
+  }
 
   // Back to the overview: the cache the server incremented now reads 100.
   await page.goto(projectUrl);
