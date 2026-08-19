@@ -75,7 +75,7 @@ at ≤6 logins.
 | T-003 | M3b Issue views UI (list/board/table/filter/views) | done |
 | T-004 | M3c Issue panel + new-issue modal + triage | done |
 | T-005 | M4a Projects/cycles API | done |
-| T-006 | M4b Projects/cycles UI | open |
+| T-006 | M4b Projects/cycles UI | done |
 | T-007 | M5a Docs API (pages/blocks/templates/search) | open |
 | T-008 | M5b Docs home + page tree + trash | open |
 | T-009 | M5c Block editor core | open |
@@ -97,6 +97,12 @@ at ≤6 logins.
 | T-025 | Seed hand-writes project progress caches, legacy shape | open |
 | T-026 | Harden the counter-write gate (shapes, states.category) | open |
 | T-027 | Gate runner loses test counts on CI (ANSI codes) | open |
+| T-028 | Projects cannot be reordered (no position on PATCH) | open |
+| T-029 | PJ-01 star has no favorites endpoint | open |
+| T-030 | Issue engine scopes only by pathname (+ panel chips) | open |
+| T-031 | S-15/S-16 series endpoints (sparkline, scope line, blocked) | open |
+| T-032 | No GET for a single cycle | open |
+| T-033 | `?team=` in the URL pops the new-issue modal | open |
 
 Parallelism note: tickets in different chains are file-disjoint per
 architecture §8 and MAY run in parallel (e.g. the T-007…T-010 docs chain vs
