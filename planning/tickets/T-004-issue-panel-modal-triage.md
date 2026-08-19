@@ -1,6 +1,6 @@
 # T-004 — M3c Issue panel + new-issue modal + triage
 
-status: in-review
+status: done
 module: M3 issues engine
 assignee: Cursor Grok 2026-08-18
 owns: src/island/features/issue-detail/**, src/island/features/issue-create/**, src/island/features/triage/**, edits to src/island/app/routes.ts (route swaps only), tests/island/features/{issue-detail,issue-create,triage}*
@@ -68,6 +68,8 @@ focus. CSRF unit: Origin `localhost:4321` vs listen address `127.0.0.1`.
 
 **Gates:** `npm run check` 0 errors · `npm test` 121/121 · `npm run build`
 clean · `npm run e2e` 8/8.
+
+**PR:** https://github.com/Jeff-Kazzee/Prodmax/pull/7 into `dev`.
 
 **Deviations / follow-ups:**
 - No drafts or attachments API in T-002. Drafts are localStorage. Attachments
