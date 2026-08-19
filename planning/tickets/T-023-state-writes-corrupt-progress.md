@@ -1,6 +1,6 @@
 # T-023 — workflow state writes corrupt project progress
 
-status: in-review
+status: done
 module: M1 data and API core
 assignee: claude-code session 47ad9748, 2026-08-19
 owns: src/pages/api/states/[id]/index.ts, tests/api/states*.test.ts, planning/architecture.md §8

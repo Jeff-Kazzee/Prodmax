@@ -92,10 +92,11 @@ at ≤6 logins.
 | T-020 | Phase C verification sweep (epic) | open |
 | T-021 | Polish: README, badges, release | open |
 | T-022 | T-005 remediation spec amendments (docs only) | done |
-| T-023 | Workflow state writes corrupt project progress | open |
+| T-023 | Workflow state writes corrupt project progress | done |
 | T-024 | Consumer policy and version monotonicity (pre-T-016) | open |
 | T-025 | Seed hand-writes project progress caches, legacy shape | open |
 | T-026 | Harden the counter-write gate (shapes, states.category) | open |
+| T-027 | Gate runner loses test counts on CI (ANSI codes) | open |
 
 Parallelism note: tickets in different chains are file-disjoint per
 architecture §8 and MAY run in parallel (e.g. the T-007…T-010 docs chain vs
