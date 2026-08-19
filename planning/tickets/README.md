@@ -91,7 +91,8 @@ at ≤6 logins.
 | T-019 | M10 Settings/admin | open |
 | T-020 | Phase C verification sweep (epic) | open |
 | T-021 | Polish: README, badges, release | open |
-| T-022 | T-005 remediation spec amendments (docs only) | open |
+| T-022 | T-005 remediation spec amendments (docs only) | done |
+| T-023 | Workflow state writes corrupt project progress | open |
 
 Parallelism note: tickets in different chains are file-disjoint per
 architecture §8 and MAY run in parallel (e.g. the T-007…T-010 docs chain vs

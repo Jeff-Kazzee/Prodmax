@@ -1,6 +1,6 @@
 # T-022 — T-005 remediation spec amendments
 
-status: in-review
+status: done
 module: planning docs
 assignee: claude-opus-5 docs session 2026-08-19
 owns: planning/architecture.md, planning/tickets/T-005-projects-api.md, planning/tickets/README.md
