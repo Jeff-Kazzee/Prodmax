@@ -59,6 +59,19 @@ It also silently masks a real regression class. If a future change made the
 test gate emit no counts locally as well, the output would look identical to
 this, and `counts unparsed` reads as a formatting quirk rather than an alarm.
 
+## A second CI defect, same run family
+
+`timeout-minutes: 20` in `.github/workflows/gates.yml` is tight. The first
+successful run used 12m50s cold, leaving about seven minutes of headroom. The
+very next run, on a docs-only commit, was killed at 20m17s inside
+`npx playwright install --with-deps chromium`. A re-run passed. So the browser
+download alone can eat the whole margin, and the failure surfaces as a red check
+on a PR that has nothing wrong with it.
+
+A red check that is usually a flake is worse than no check, because it trains a
+reader to re-run rather than to look. Cache the Playwright browsers on the
+runner, raise the timeout, or both.
+
 ## Deliverables
 
 1. Strip ANSI escape sequences from captured output before `summarize` runs.
@@ -71,6 +84,10 @@ this, and `counts unparsed` reads as a formatting quirk rather than an alarm.
    can see what it could not parse. Decide which and record why.
 3. A test for `summarize` against captured real output, one fixture with ANSI
    codes and one without, for all four gates.
+4. Cache Playwright browsers keyed on the lockfile, and raise
+   `timeout-minutes` so a cold install cannot consume the budget. Name the
+   observed cold-run time in a comment so the next person tuning it has the
+   number.
 
 ## Acceptance
 

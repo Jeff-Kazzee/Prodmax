@@ -1,9 +1,12 @@
-# Prodmax Build State — HANDOFF (updated 2026-08-18 after T-002)
+# Prodmax Build State — HANDOFF (updated 2026-08-19 after T-023)
 
-Read `planning/handoffs/2026-08-18-t005-ready.md` in a fresh session, then
+Read `planning/handoffs/2026-08-19-t006-ready-v2.md` in a fresh session, then
 `AGENTS.md` and `planning/tickets/README.md`.
 Project root: `C:\Users\jeffk\big-projects\Prodmax`. GitHub default is `dev`.
-Next ticket: **T-005** (projects/cycles API).
+Next ticket: **T-006** (projects/cycles UI).
+
+Everything below this block predates T-005 and is kept for the M0 to M2
+decisions and the shell-rule history. The handoff file is the current state.
 
 ## T-001 amendment (2026-08-18)
 
@@ -18,14 +21,15 @@ provider #0. Code is **not** in this amendment — implement in T-013
 |---|---|
 | 1 Research | ✅ planning/research/ + architecture.md + acceptance-tests.md (AT-001…126; T-001 amendment 2026-08-18) |
 | 2 UX/Design | ✅ ux-spec.md + design-system.md (AI dock §3.7 + `Cmd+J` in T-001) |
-| 3 Build | M0 ✅ · M1a ✅ · M1b ✅ · M2 ✅ f3c881b · **M3a issues API ✅** (`effe2b7` + undo-token follow-up on `dev`) · M3b–M10 pending |
+| 3 Build | M0 ✅ · M1a ✅ · M1b ✅ · M2 ✅ · M3a ✅ · M3b ✅ · M3c ✅ · **M4a projects/cycles API ✅** (`63f18e2`, incl. the T-005 remediation and T-023) · M4b–M10 pending |
 | 4 Verify | Pending — drive with chrome-devtools MCP + browser agents against AT-001…126 |
 
 ## Gate status at handoff (all green)
 
-`npm run check` 0 errors · `npm test` 96/96 · `npm run build` clean · `npm run e2e` 6/6.
-Demo login `demo@prodmax.dev` / `prodmax-demo`. Last full gate run: T-002
-undo-token follow-up on `dev`.
+On `dev` at `63f18e2`, from `node scripts/gates.mjs`: build complete, check 244
+files 0 errors, test 45 files 205 tests, e2e 8 passed. CI runs the same runner
+on every PR into `dev` and now genuinely executes. See the handoff file for its
+two known defects (T-027). Demo login `demo@prodmax.dev` / `prodmax-demo`.
 
 ## Commits (repo is its own git)
 
