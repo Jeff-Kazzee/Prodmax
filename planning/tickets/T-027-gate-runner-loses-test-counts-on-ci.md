@@ -1,9 +1,10 @@
 # T-027 — the gate runner cannot read its own test counts on CI
 
-status: open
+status: done
 module: M0 scaffold
 owns: scripts/gates.mjs, .github/workflows/gates.yml
 depends-on: none
+assignee: claude-opus-5 session 6858dcdc, 2026-08-19
 
 > Read `planning/tickets/README.md` first (shell rules, gates, anti-stall).
 
@@ -94,3 +95,68 @@ runner, raise the timeout, or both.
 The ANSI fixture parses to the same counts as the plain fixture, proven by a
 test that fails against the current parser. A CI run prints real counts in the
 verdict block. All four gates green.
+
+## Work log
+
+Session `6858dcdc`, 2026-08-19. Branch `fix/t-027-gate-counts-on-ci`.
+
+```
+════ GATE VERDICT ════
+PASS build  complete
+PASS check  245 files, 0 errors
+PASS test   files: 46 passed (46) | tests: 224 passed (224)
+PASS e2e    8 passed (9.3s)
+ALL GATES PASS
+```
+
+### Deliverable 2, the decision
+
+Unparsed counts now exit 2, and the run prints an `EVIDENCE MISSING` block with
+the tail of the output the parser could not read.
+
+Not exit 1, and not a quiet pass. This runner exists to produce evidence, so a
+green run that cannot show its numbers has not finished its job, and
+`counts unparsed` sitting beside a PASS reads as a formatting quirk rather than
+the alarm it is: the identical line would appear if a gate stopped reporting
+counts altogether. But "a gate failed" and "I could not read the numbers" are
+different problems, and a reader must not have to guess which one turned the
+check red, so they get different codes. PASS and FAIL still come from the exit
+code alone and never from a parsed number.
+
+### Fixtures
+
+Real bytes from GitHub Actions run `32313063496`, the CI job for PR 13, with
+GitHub's per-line log prefix removed and nothing else changed. Each gate has an
+ANSI fixture and a plain twin, and the twin was produced by an independent
+regex rather than by `stripAnsi`, so the test is not checking the code under
+test against itself. Expected counts are the ones that run's own verdict block
+printed.
+
+Local capture was tried first and rejected: vitest emits no colour here even
+under `FORCE_COLOR`, so a locally captured fixture could not reproduce the
+defect at all.
+
+### Falsification
+
+Reverting `summarize` to parse raw output, which is what shipped:
+
+| Break | Failure |
+|---|---|
+| `const out = String(rawOut)` in place of `stripAnsi(rawOut)` | `expected 'counts unparsed' to be 'files: 51 passed (51) | tests: 256 passed (256)'` |
+
+Only the test gate fails against that break, and that is faithful: check, build
+and e2e parsed on CI too. The symptom was always `PASS test counts unparsed`
+alone.
+
+### Constraint amendment
+
+`tests/scripts/gates.test.ts` and its fixtures sit outside the ticket's `owns:`
+list, which names `scripts/gates.mjs` and `.github/workflows/gates.yml` only.
+Deliverable 3 requires a test.
+
+### Left unverified
+
+The exit-2 path has unit coverage on `summarize` and `tailLines` but no test
+drives `runGates` end to end, because doing so means running the real four
+gates twice. The next CI run is the first real exercise of the cache and the
+raised timeout.

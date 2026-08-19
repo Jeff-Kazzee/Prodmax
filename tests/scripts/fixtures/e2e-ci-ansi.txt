@@ -1,0 +1,20 @@
+
+
+Running 9 tests using 2 workers
+
+  ✓  1 [chromium] › tests/e2e/issues.spec.ts:9:1 › filter chip writes ?f= on the issues view (1.0s)
+  ✓  2 [chromium] › tests/e2e/issue-panel.spec.ts:9:1 › create issue, open panel, edit priority, Esc restores focus (1.4s)
+  ✓  4 [chromium] › tests/e2e/shell.spec.ts:23:3 › app shell (M2) › wrong credentials show the generic error, not a field hint (AT-002, FM-003) (421ms)
+  ✓  5 [chromium] › tests/e2e/shell.spec.ts:32:3 › app shell (M2) › valid login lands in the shell with landmarks (AT-002, §3.5) (499ms)
+  ✓  3 [chromium] › tests/e2e/projects.spec.ts:15:1 › project progress follows the issue that lands in it (2.2s)
+  ✓  6 [chromium] › tests/e2e/shell.spec.ts:41:3 › app shell (M2) › command palette opens with Ctrl+K, runs navigation, Esc closes (AT-037) (993ms)
+  ✓  7 [chromium] › tests/e2e/smoke.spec.ts:3:1 › island hydrates and the shell gate redirects anon users (AT-007) (283ms)
+  ✓  8 [chromium] › tests/e2e/shell.spec.ts:55:3 › app shell (M2) › theme cycles and persists; density flips html attribute (AT-110, FM-085) (461ms)
+  ✓  9 [chromium] › tests/e2e/shell.spec.ts:71:3 › app shell (M2) › ? opens searchable shortcut help; later-module routes stay honest (FM-028) (788ms)
+
+  9 passed (9.7s)
+
+════ GATE VERDICT ════
+PASS build  complete
+PASS check  276 files, 0 errors
+PASS test   counts unparsed

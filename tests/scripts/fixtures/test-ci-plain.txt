@@ -1,0 +1,20 @@
+ ✓ tests/api/users.test.ts (4 tests) 303ms
+ ✓ tests/island/features/issues/filter-ast.test.ts (4 tests) 13ms
+ ✓ tests/island/features/issues/list.test.tsx (2 tests) 1465ms
+     ✓ toggles row selection and shows the bulk bar  780ms
+     ✓ persists group collapse across a remount  682ms
+ ✓ tests/db/migrations.test.ts (1 test) 59ms
+ ✓ tests/db/scope.test.ts (2 tests) 88ms
+ ✓ tests/island/features/triage/keymap.test.tsx (1 test) 567ms
+     ✓ accepts the focused row with 1  565ms
+ ✓ tests/db/password.test.ts (3 tests) 318ms
+ ✓ tests/island/features/issues/virtualize.test.ts (3 tests) 7ms
+ ✓ tests/island/features/issues/selection.test.ts (3 tests) 5ms
+ ✓ tests/health.test.ts (1 test) 7ms
+
+ Test Files  51 passed (51)
+      Tests  256 passed (256)
+   Start at  23:24:58
+   Duration  43.64s (transform 2.29s, setup 9.42s, import 27.41s, tests 45.31s, environment 38.55s)
+
+stderr | tests/api/states-progress.test.ts > T-023: state writes repair project progress > PATCH rolls the category back when the repair fails

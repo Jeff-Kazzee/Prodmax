@@ -1,0 +1,20 @@
+
+36   const onSubmit = async (e: React.FormEvent) => {
+                                      ~~~~~~~~~
+
+src/lib/keyboard/hotkeys.ts:164:44 - warning ts(6385): 'platform' is deprecated.
+
+164   return /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent);
+                                               ~~~~~~~~
+
+src/pages/api/workspaces/[id]/members/[userId]/index.ts:67:36 - warning ts(6133): 'actor' is declared but its value is never read.
+
+67   const { ctx: sessionCtx, member: actor } = requireWorkspace(ctx.request, ctx.params.id, "admin");
+                                      ~~~~~
+
+Result (276 files): 
+- 0 errors
+- 0 warnings
+- 6 hints
+
+
