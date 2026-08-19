@@ -1,0 +1,7 @@
+ts	phase	decision	why	evidence	result
+2026-08-19T12:10:26Z	review	ran a three-model adversarial review on the T-005 swarm output	all four gates were green but nobody had read 2411 lines	T-005 work log, commit 5b7fc71	5 blocking defects found
+2026-08-19T12:10:27Z	review	traced four of the five defects to one missing field on IssueMutation	fixing symptoms separately would have left the contract wrong	planning/plans/t005-remediation/overview.md	collapsed 5 fixes into 11 phases
+2026-08-19T12:10:28Z	baseline	committed the defective swarm code unmodified before touching it	no restore point for 2411 untracked lines, and the fix diff is unreadable without a baseline	commit b0155cf	baseline in git
+2026-08-19T12:10:28Z	amendments	filed T-022 instead of editing M1 files directly	architecture section 8 line 871 requires it, and skipping it is what caused the bug	commit 2a84d15	M1 to M4 amendment recorded
+2026-08-19T12:10:29Z	phase-1	added minRole member to 12 write handlers, left 5 GETs roleless	section 7 lines 840-842 deny guests, line 820 grants them a team-scoped read	commit a9192c3	gates green, 165 tests
+2026-08-19T12:10:29Z	phase-1	drove the guest close over HTTP on both the baseline and the fix	vitest alone could not show the irreversible close actually happening	scratchpad/guest-close-proof.mjs	baseline 200 and cycle closed, fix 403 and row unchanged
