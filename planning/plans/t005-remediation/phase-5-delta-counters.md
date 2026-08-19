@@ -4,19 +4,21 @@ Back to [overview.md](overview.md).
 
 ## Goal
 
-A counter update becomes O(1) per write. The full aggregate leaves the write path
-and survives as a named repair path.
+A counter update becomes O(1) per write and O(1) per batch, not per issue. The
+full aggregate leaves the write path and survives as an exported repair path.
 
 ## Blocked on
 
-T-022 deliverables 2 and 3. Deliverable 2 amends §2.4's
-`progress_points_cache` note to the four-field shape. Deliverable 3 restates §9
-row 3 as an incremental delta, so a reader of §9 alone cannot arrive at the
-recompute-on-write design T-005 shipped. Phase 3 is a hard prerequisite, because
-the delta is computed from `IssueMutation.before`.
+T-022 deliverables 2 and 3. Deliverable 2 amends §2.4's `progress_points_cache`
+note to the four-field shape. Deliverable 3 restates §9 row 3 as an incremental
+delta, so a reader of §9 alone cannot arrive at the recompute-on-write design
+T-005 shipped.
 
-The implementer runs `pstack:interrogate` on this diff before opening the PR.
-The counter design is the contested one.
+Phases 3 and 4 are hard prerequisites. The delta comes off `IssueTransition`, and
+the batch flush feeds the consumer.
+
+The implementer runs `pstack:interrogate` on this diff before opening the PR. The
+counter design is the contested one.
 
 ## Changes
 
@@ -28,77 +30,162 @@ a TEXT column holding JSON.
 - `ProgressPoints` widens from `{done, total}` to
   `{done, total, issuesDone, issuesTotal}`. `done` and `total` stay
   estimate-weighted. The two new fields hold live issue counts.
-- `progress_cache` becomes derived from the issue counts,
+- `progress_cache` derives from the issue counts,
   `round(100 * issuesDone / issuesTotal)` and 0 when `issuesTotal` is 0. It stays
-  the stored rounded percent that reads serve, per §9. A percent cannot be
-  incremented, which is why the counts have to be stored at all.
+  the stored rounded percent that reads serve, per §9. Nothing can increment a
+  percent, which is why the counts have to live in the row at all.
 - `parseProgressPoints` tolerates the legacy two-field shape. A row missing
-  `issuesTotal` is reported as legacy rather than parsed into zeros, so it routes
-  to the repair path instead of silently reading as an empty project.
-- A new increment path replaces the aggregate. From `event.before` and the
-  post-write row it derives, per affected project, how many issues joined or
-  left, how many crossed into or out of the completed category, and the same two
-  numbers weighted by estimate. It then issues one `UPDATE projects` per affected
-  project applying the increments and recomputing the derived percent from the
-  new counts. No `count(*)` and no `sum(...)` over `issues` on the write path.
-- `recomputeProjectProgress` is renamed to `repairProjectProgress` and keeps the
-  workspace predicate phase 2 gave it. It is never called from the write path.
-  It exists for backfill and as a reconciliation entry point.
+  `issuesTotal` reads as legacy rather than as zeros, so it routes to the repair
+  path instead of looking like an empty project.
+- An increment path replaces the aggregate on the write path. It folds the whole
+  batch into one `ProgressDelta` per affected project, then issues one
+  `UPDATE projects` per project and recomputes the derived percent from the new
+  counts. No `count(*)` and no `sum(...)` over `issues` on the write path.
+- `recomputeProjectProgress` becomes `repairProjectProgress` and keeps the
+  workspace predicate phase 2 gave it. It stays exported, never runs on the write
+  path, and never goes away. T-023 is why.
 
-**The gate.** `syncProjectProgress` returns immediately when the mutation touches
-none of `stateId`, `estimate`, `projectId`, `deletedAt`. A title edit, a priority
-edit, an assignee change, and a label change all do no work at all. `created` and
-`deleted` kinds always change membership, so they pass the gate unconditionally.
+**Counted-set membership, one rule for every case.** An issue snapshot counts
+when its `projectId` is set, its `deletedAt` is null, and its state category is
+not `canceled`.
+
+The existing aggregate already drops canceled issues from both totals, and an
+earlier draft of this phase never mentioned them. A delta described only as
+crossing into and out of `completed` drifts the moment anyone cancels an issue.
+
+Membership makes that fall out. A counted snapshot contributes 1 to
+`issuesTotal`, its estimate to `total`, and, when its category is `completed`, 1
+to `issuesDone` and its estimate to `done`. A snapshot outside the set
+contributes nothing anywhere. The delta for one transition is the `after`
+contribution minus the `before` contribution, each applied to its own side's
+project.
+
+Joining a project, leaving one, trashing, restoring, canceling, un-canceling,
+completing, un-completing, and editing an estimate then share one code path. No
+special case survives to forget, and `canceled` has no second place to go wrong.
+
+**Repair instead of increment, never repair and then increment.** A project whose
+cache is legacy or absent gets `repairProjectProgress` and no increment at all.
+The consumer runs after the issue write inside the same transaction, so the
+repair aggregate already counts the mutated row.
+
+Incrementing a repaired number double-counts the current mutation. An earlier
+draft of this phase called for exactly that, and it was a spec bug that would
+have drifted silently rather than failed a test. Each project pays one aggregate
+once, ever.
+
+`repairAllProjects(wsId)` ships alongside it for a deliberate reconciliation over
+every live project in a workspace. A one-shot entry point under `scripts/` would
+be easier to operate, but §8 line 859 gives `scripts/**` to M0 and it would need
+its own amendment. That cost outweighs a backfill that self-heals.
+
+**The gate compares state category, not `stateId`.** The consumer returns
+immediately when a transition's counted contribution matches on both sides. A
+title edit, a priority edit, an assignee change, a label change, and a cycle
+change all do no work at all.
+
+Moving an issue from "In Progress" to "In Review" changes `stateId`, and both
+states are `started`, so the contribution matches and nothing writes. A `stateId`
+gate would have let that transition through and written a zero delta.
+
 This is alternative C from the overview's table, folded in here because a
 mutation that cannot move the number should not touch the database. It also
 removes the 200-issue bulk amplification the T-005 work log records, and
 `bulkUpdateIssues` allows up to 200 ids.
 
+Resolving a category costs one indexed `states` read by primary key, memoized per
+batch. `updateIssue` hands its already-resolved state to `w.noteState`, so the
+common single-issue state change resolves nothing extra.
+
 **`src/lib/services/projects.ts`.** `createProject` seeds the four-field JSON
 instead of `{done: 0, total: 0}`.
 
-**Backfill.** Existing rows hold the two-field shape and would drift the moment
-an increment landed on them. Two entry points, no migration and no new script:
+**What this design still cannot see, and why the repair path stays exported.**
+Every delta-counter design goes silently wrong after an admin edits a workflow
+state. `PATCH /api/states/:id` can change a state's `category`, and
+`DELETE /api/states/:id` reassigns every issue in the state with one raw
+statement.
 
-- Self-healing on first touch. When the increment path finds a legacy cache on an
-  affected project, it calls `repairProjectProgress` once for that project and
-  then applies the increment to the repaired numbers. Each project pays one
-  aggregate once, ever.
-- `repairAllProjects(wsId)`, exported for a manual reconciliation over every live
-  project in a workspace.
+Both change what an issue contributes without writing the issue, so no transition
+exists to carry the delta.
+`planning/tickets/T-023-state-writes-corrupt-progress.md` owns that defect and
+depends on `repairProjectProgress` existing. This phase does not fix it and must
+not pretend to. Exporting the repair path rather than hiding it is the concrete
+thing this phase does for T-023.
 
-A one-shot entry point under `scripts/` would be cleaner to operate, but
-`scripts/**` is M0-owned per §8 line 859 and would need its own amendment. That
-cost is not worth paying for a backfill that self-heals.
+**Archived issues keep counting.** The current aggregate counts them, because it
+excludes only `deletedAt` and the canceled category, and §2.4 does not say either
+way. The membership rule above preserves that. Changing it is a product decision
+and costs one clause here and one in the repair aggregate. This phase does not
+make it under cover of a refactor.
 
-**The acceptance test.** The existing O(1) test counts prepared statements, and a
-full table scan reads as one statement and passes. It is replaced by an assertion
-about rows read, so a scan fails it. [testing.md](testing.md) carries the shape.
+**The acceptance test.** The existing O(1) test in `tests/api/projects.test.ts`
+counts prepared statements, and a full table scan is one prepared statement and
+passes. It is replaced. [testing.md](testing.md) carries the shape.
 
 ## Data structures
 
-- `ProgressPoints` gains `issuesDone` and `issuesTotal`. The stored shape is
-  `{done, total, issuesDone, issuesTotal}`, matching §2.4 as amended by T-022.
-- `ProgressDelta`, new. The per-project increment
-  `{issues, issuesDone, points, pointsDone}`, applied by one UPDATE.
+```ts
+interface ProgressPoints {
+  done: number;       // estimate-weighted
+  total: number;      // estimate-weighted
+  issuesDone: number; // live issue count
+  issuesTotal: number;
+}
+
+interface ProgressDelta {
+  issues: number;
+  issuesDone: number;
+  points: number;
+  pointsDone: number;
+}
+
+// null means the snapshot is in no counted set at all.
+function contribution(row: IssueRow, category: StateCategory): ProgressDelta | null;
+```
+
+The stored shape is `{done, total, issuesDone, issuesTotal}`, matching §2.4 as
+amended by T-022. `ProgressDelta` is both the per-snapshot contribution and the
+folded per-project increment, so subtraction is the only operation the consumer
+needs.
 
 ## Verification
 
 **Static.** `npm run check` 0 errors, `npm test` 0 failures, `npm run build`
 clean, `npm run e2e` all pass.
 
+Two unit tests carry this phase.
+
+The replacement cost test intercepts every statement prepared during one write,
+runs `EXPLAIN QUERY PLAN` over each, and fails on any plan that scans `issues`.
+It also asserts that the statement count does not grow with the number of issues
+in the project. Counting statements alone is what let the scan through.
+
+The property-based test generates a random sequence of creates, state changes
+across all four categories, project moves, estimate edits, cancels, trashes, and
+undos, and asserts after every step that the incremented cache equals what
+`repairProjectProgress` computes for the same project. A scripted sequence does
+not find the canceled case or the estimate change on an already-done issue,
+which are exactly the two the reviewed design got wrong. The generator is
+hand-rolled from a seeded PRNG in the test file, because adding `fast-check`
+edits `package.json`, which is M0-owned and would cost a second amendment. A
+failing seed is printed so the case can be replayed.
+
+Both files sit under `tests/api/projects*`, which is what T-005's `owns:` line
+covers.
+
 **Runtime.** Two observations, both against a served build.
 
 1. Correctness. `npm run build`, then `npm run preview -- --port 4321`. Create a
-   project, add issues over HTTP, complete some, move one to another project,
-   trash one. Then read `progress_cache` and `progress_points_cache` straight out
-   of `data/prodmax.db` and compare them against what `repairProjectProgress`
-   computes for the same project. Observed end state: the incremented values and
-   the repaired values are identical. Any drift is a delta bug and blocks the
-   phase.
+   project, add issues over HTTP, complete some, cancel one, move one to another
+   project, trash one. Then read `progress_cache` and `progress_points_cache`
+   straight out of `data/prodmax.db` and compare them against what
+   `repairProjectProgress` computes for the same project. Observed end state: the
+   incremented values and the repaired values are identical. Any drift is a delta
+   bug and blocks the phase.
 2. Cost. Seed 5,000 issues into one project directly in SQLite. Time a single
-   `PATCH /api/issues/:id` that changes only the title, and a second that changes
-   the state. Observed end state after this phase: the title edit performs no
-   project write at all, and the state edit's wall time does not move when the
-   project holds 5,000 issues instead of 50. Before this phase both scale with
-   the issue count.
+   `PATCH /api/issues/:id` that changes only the title, a second that moves the
+   state between two `started` states, and a third that completes the issue.
+   Observed end state after this phase: the first two perform no project write at
+   all, and the third's wall time does not move when the project holds 5,000
+   issues instead of 50. Before this phase all three scale with the issue count.

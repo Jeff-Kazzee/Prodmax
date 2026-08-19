@@ -1,54 +1,84 @@
 [Back to overview](overview.md)
 
-# Phase 11 — cache write atomic with the issue write
+# Phase 11: prove the choke-point holds
 
 ## Goal
 
-Make the counter update part of the same transaction as the issue write, and stop
-a listener failure from returning 500 on a mutation that already committed.
+Prove that the counter update is atomic with the issue write, and that nothing
+writes `issues` outside the choke-point. This phase writes no service code. The
+atomicity it used to bolt on is now a property of `runIssueWrite`, which opens
+the transaction and flushes the consumers inside it. What is left is the part no
+type can enforce and no earlier phase can claim.
 
 ## Blocked on
 
-T-022. This phase edits M1-owned `src/lib/services/issues-update.ts` and
-`issues.ts`.
+Phases 3, 4, 5, 6, and 9, all of them. The gate's expected count is only correct
+once every one of them has landed. Nothing here is blocked on T-022, because this
+phase touches only `tests/api/projects*`, which T-005 already owns.
 
 ## Changes
 
-`updateIssue` runs inside no transaction at all. The history inserts, the label
-replace, the issue `UPDATE`, and the listener call are four separate implicit
-transactions. A crash between the issue write and the listener leaves the counter
-stale, and because reads never recompute, nothing repairs it.
+An earlier draft of this phase wrapped `updateIssue` in a transaction and moved
+the mutation record inside it. That work moved into phase 3. `runIssueWrite`
+opens or joins the transaction, and the batch flush runs before commit, so the
+history inserts, the label replace, the issue UPDATE, and the counter update are
+one unit. `createIssue`'s narrower version of the same gap closes the same way.
+There is no separate transaction change left to make.
 
-`createIssue` wraps its insert in a transaction but calls `recordIssueMutation`
-after that transaction commits, so it has the same gap in a narrower window.
+**The failure policy, stated once.** A consumer that throws rolls the issue write
+back. Under §9 a committed issue write with a stale counter is the exact state
+this plan exists to prevent, so rolling back is the correct default and it is a
+decision rather than an accident of where the call sits. The client sees one
+coherent error and an unchanged row, including an unchanged `version`.
 
-Wrap `updateIssue` in a transaction and move the `recordIssueMutation` call inside
-it in both functions. §9 requires the counter update in the same service write,
-and a listener that runs after the commit is not that.
+**The source-tree gate.** No type forbids calling Drizzle directly, so a raw
+`db.update(issues)` that bypasses the writer stays possible. That becomes a check
+rather than a hope, per `pstack:principle-encode-lessons-in-structure`. A vitest
+assertion greps the source tree for writes to the `issues` table and fails on any
+outside `src/lib/services/issues-events.ts`, which holds the writer.
 
-The pattern already exists in the tree. `bulkUpdateIssues` wraps the whole batch,
-which is what makes the unwrapped single-issue path read as an oversight rather
-than a decision.
+It is a vitest assertion rather than a `package.json` script because
+`package.json` is M0-owned per §8 line 859 and a new script would cost a second
+amendment. Folding it into vitest keeps it inside T-005's owns list and inside
+the `npm test` gate every phase already runs.
 
-Once the listener runs inside the transaction, a throw rolls the issue write back
-instead of leaving the client with a 500 on a persisted change and a `version`
-that already incremented. Decide explicitly whether a counter failure should fail
-the issue write. Rolling back is the correct default under §9, because a committed
-issue write with a stale counter is the state this whole plan exists to prevent.
+The count is the point. The gate reports 11 violations today, ten across the five
+service files `cycles.ts`, `issues.ts`, `issues-update.ts`, `issues-bulk.ts`, and
+`issues-history.ts`, plus one in `src/pages/api/states/[id]/index.ts`. After
+phases 3, 4, 5, 6, and 9 it reports exactly one, and that one is the raw
+reassignment on line 88 of the states endpoint, which
+`planning/tickets/T-023-state-writes-corrupt-progress.md` owns. A future reader
+who sees one violation is looking at a correct tree with a known open ticket. A
+reader who sees zero is looking at a tree where T-023 has closed. A reader who
+sees more than one is looking at a regression.
+
+The gate asserts the exact expected count and names the one allowed file, rather
+than asserting "no more than before". A suppression list that grows is how this
+class of check dies.
 
 ## Data structures
 
-None. This phase changes transaction boundaries only.
+None. This phase adds tests only.
 
 ## Verification
 
-Static. `npm run check` 0 errors, `npm test` 0 failures, `npm run build` clean,
-`npm run e2e` all pass.
+**Static.** `npm run check` 0 errors, `npm test` 0 failures, `npm run build`
+clean, `npm run e2e` all pass.
 
-Runtime. Force the failure rather than reasoning about it. Register a listener that
-throws, issue a `PATCH /api/issues/:id` that changes the state to a completed
-category, and observe two things. The response is a single coherent error, and the
-issue row is unchanged with `version` not incremented. Repeat with the listener
-restored and confirm the write and the counter both land. Reading the issue row
-back from SQLite directly is the check, not the API response, since the point is
-whether the write persisted.
+The source-tree gate runs inside `npm test`. It must report exactly one violation
+and name `src/pages/api/states/[id]/index.ts`. Run it against the tree before
+phase 3 as well, and record that it reported 11. A gate that has never failed has
+not been tested.
+
+**Runtime.** Force the failure rather than reasoning about it. Add a throwing
+consumer through `withIssueConsumers`, issue a `PATCH /api/issues/:id` that
+changes the state to a completed category, and observe two things. The response
+is a single coherent error, and the issue row is unchanged with `version` not
+incremented. Repeat without the throwing consumer and confirm that the write and
+the counter both land. Read the issue row back from SQLite directly rather than
+trusting the API response, since the question is whether the write persisted.
+
+A second observation covers the batch boundary. Run the same throwing consumer
+against a 20-issue `POST /api/issues/bulk`. Observed end state: all 20 rows
+unchanged, because the flush happens once at the outermost call and the rollback
+takes the whole batch with it.

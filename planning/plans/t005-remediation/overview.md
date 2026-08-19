@@ -113,15 +113,15 @@ independently shippable today and need no amendment.
 
 1. [Authorization](phase-1-authorization.md)
 2. [Workspace predicates in M4 services](phase-2-workspace-predicates.md)
-3. [IssueMutation carries before-state](phase-3-event-contract.md)
-4. [Arm the progress hook at the choke-point](phase-4-arm-the-hook.md)
+3. [The issue-write contract](phase-3-event-contract.md)
+4. [Arm the progress consumer at the choke-point](phase-4-arm-the-hook.md)
 5. [Delta counters](phase-5-delta-counters.md)
 6. [Undo and restore emit faithful events](phase-6-undo-and-restore.md)
 7. [Cross-workspace parenting validation](phase-7-parenting-validation.md)
 8. [Cycle status derived on read](phase-8-cycle-status.md)
 9. [Cycle scope and rollover through the choke-point](phase-9-cycle-choke-point.md)
 10. [Consider-tier cleanup](phase-10-cleanup.md)
-11. [Cache write atomic with the issue write](phase-11-atomic-cache-write.md)
+11. [Prove the choke-point holds](phase-11-atomic-cache-write.md)
 
 Testing strategy across all phases: [testing.md](testing.md)
 

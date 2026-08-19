@@ -114,7 +114,8 @@ Not impossible, and stated plainly rather than papered over: a raw
 Drizzle. That becomes a check rather than a hope, per
 `pstack:principle-encode-lessons-in-structure`. A vitest assertion greps the
 source tree and fails when `issues` is written outside the choke-point. It reports
-11 violations across 5 files today. After phases 3 through 6 and 9 it reports
+11 raw writes today, ten across the five amended service files plus one in the
+states endpoint. After phases 3 through 6 and 9 it reports
 exactly one, and that one is the subject of T-023.
 
 Folding the gate into vitest rather than the `check` script keeps it inside
@@ -147,3 +148,13 @@ only `deletedAt` and the canceled category. §2.4 does not say either way. Today
 behavior is preserved rather than changed under cover of a refactor. Answering it
 "archived does not count" costs one clause in the repair aggregate and one field
 in the gate. That needs a product decision, not an engineering one.
+
+## One argument in the record that turned out to be false
+
+Two of the four runners argued for keeping the runtime registry partly because
+the test suite uses it. Verified against the tree: `onIssueMutation` appears
+nowhere under `tests/`. The one test that drives the consumer,
+`tests/api/projects.test.ts:314`, calls `syncProjectProgress` directly with a
+hand-built event. So the registry has no test dependency to preserve, and the
+tie-break did not need to weigh one. Recorded because the claim was repeated in
+the synthesis before it was checked.
