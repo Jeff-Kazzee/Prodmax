@@ -18,7 +18,7 @@ not the office."
 - `planning/tickets/` — **the work queue**: T-001…T-021, one self-contained
   ticket per module brief, with claim/verify rules in `planning/tickets/README.md`
 - `planning/qa/acceptance-tests.md` — AT-001…119 (exit gate)
-- `planning/handoffs/2026-08-18-t004-ready.md` — current pickup brief
+- `planning/handoffs/2026-08-18-t005-ready.md` — current pickup brief
   (git, next ticket, allowed gaps). Older files in that folder are superseded.
 
 ## Working from tickets (default way to build)
