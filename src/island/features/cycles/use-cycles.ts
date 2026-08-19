@@ -8,7 +8,7 @@
  * `/cycle/:id` falls back to a bounded fan-out across eligible teams to find
  * which one owns that cycle.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { onIssuesChanged } from "@island/features/issue-create/commands";
 import { listCycles, listTeams } from "./api";
 import { pickCurrent } from "./cycle-stats";
@@ -42,19 +42,37 @@ export function useCycles(
   const [cycles, setCycles] = useState<CycleDto[]>([]);
   const [cycle, setCycle] = useState<CycleDto | null>(null);
   const [status, setStatus] = useState<CycleLoadStatus>("loading");
+  const seq = useRef(0);
+  const settled = useRef(false);
 
-  const load = useCallback(async () => {
+  /**
+   * `background` is what stops a scope change from blanking the screen.
+   *
+   * This hook subscribes to the issue bus, so every add and remove reloads it.
+   * Setting "loading" on those reloads unmounts ScopePanel, which throws away
+   * the user's search box and scroll position mid-task. Only the first load of
+   * a given cycle shows skeletons.
+   *
+   * The sequence guard matters more here than anywhere else in the feature:
+   * the id-without-team branch below awaits a fan-out across every eligible
+   * team, so an older call has the longest possible window to land last and
+   * overwrite the newer one.
+   */
+  const load = useCallback(async (background = false) => {
     if (!wsId) return;
-    setStatus("loading");
+    const my = ++seq.current;
+    if (!background || !settled.current) setStatus("loading");
     let teams: CycleTeam[];
     try {
       teams = eligibleTeams((await listTeams(wsId)).data);
     } catch {
-      setStatus("error");
+      if (my === seq.current) setStatus("error");
       return;
     }
+    if (my !== seq.current) return;
     setEligible(teams);
     if (teams.length === 0) {
+      settled.current = true;
       setStatus("no-teams");
       return;
     }
@@ -66,12 +84,14 @@ export function useCycles(
     if (cycleId && !requested) {
       try {
         const pages = await Promise.all(teams.map((t) => listCycles(wsId, t.id)));
+        if (my !== seq.current) return;
         for (let i = 0; i < teams.length; i++) {
           const found = (pages[i]?.data ?? []).find((c) => c.id === cycleId);
           if (found) {
             setTeam(teams[i] ?? null);
             setCycles(pages[i]?.data ?? []);
             setCycle(found);
+            settled.current = true;
             setStatus("ready");
             return;
           }
@@ -79,9 +99,10 @@ export function useCycles(
         setTeam(teams[0] ?? null);
         setCycles(pages[0]?.data ?? []);
         setCycle(null);
+        settled.current = true;
         setStatus("no-cycle");
       } catch {
-        setStatus("error");
+        if (my === seq.current) setStatus("error");
       }
       return;
     }
@@ -94,25 +115,29 @@ export function useCycles(
     setTeam(target);
     try {
       const page = await listCycles(wsId, target.id);
+      if (my !== seq.current) return;
       setCycles(page.data);
       const focused = cycleId
         ? (page.data.find((c) => c.id === cycleId) ?? null)
         : pickCurrent(page.data);
       setCycle(focused);
+      settled.current = true;
       setStatus(focused ? "ready" : "no-cycle");
     } catch {
-      setStatus("error");
+      if (my === seq.current) setStatus("error");
     }
   }, [wsId, cycleId, teamKey]);
 
   useEffect(() => {
+    settled.current = false;
     void load();
   }, [load]);
 
   // Scoping and state changes both move cycle stats, which are computed
-  // server-side over live issues while a cycle runs.
+  // server-side over live issues while a cycle runs. Refresh in the
+  // background so the panel the user is working in stays mounted.
   useEffect(() => {
-    return onIssuesChanged(() => void load());
+    return onIssuesChanged(() => void load(true));
   }, [load]);
 
   return { eligible, team, cycles, cycle, status, reload: () => void load() };

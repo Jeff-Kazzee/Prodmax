@@ -37,7 +37,7 @@ export function CycleHeader({
   const { day, total } = dayXofY(cycle, now);
   const capacity = capacityEstimate(cycles);
   const asOf = asOfCaption(cycle);
-  const over = capacity !== null ? cycle.stats.scope.points - capacity : 0;
+  const over = capacity !== null ? cycle.stats.scope.points - capacity.points : 0;
   const others = cycles.filter((c) => c.id !== cycle.id);
 
   return (
@@ -82,7 +82,13 @@ export function CycleHeader({
           </span>
         ) : null}
 
-        {cycle.status !== "completed" ? (
+        {/*
+          Only a running cycle can be closed. The server rejects a second close
+          on a completed one with 409, and it ACCEPTS a close on a future one,
+          which would freeze empty stats and auto-create a successor for a
+          cycle that never ran. Offering the button there is offering a mistake.
+        */}
+        {cycle.status === "active" ? (
           <Button size="sm" variant="outline" className="ml-auto" onClick={onClose}>
             Close cycle
           </Button>
@@ -106,7 +112,8 @@ export function CycleHeader({
         </p>
       ) : capacity !== null ? (
         <p className="font-mono text-xs text-muted-foreground" data-testid="cy-capacity">
-          capacity est {capacity} pts (mean of last 3) · scoped {cycle.stats.scope.points} pts
+          capacity est {capacity.points} pts (mean of last {capacity.sample}) · scoped{" "}
+          {cycle.stats.scope.points} pts
           {over > 0 ? (
             <span className="text-amber-500">
               {" "}
@@ -124,7 +131,7 @@ export function CycleHeader({
           {others.map((c) => (
             <Link
               key={c.id}
-              to={`/cycle/${c.id}${team ? `?team=${encodeURIComponent(team.key)}` : ""}`}
+              to={`/cycle/${c.id}${team ? `?cycleTeam=${encodeURIComponent(team.key)}` : ""}`}
               className="rounded-sm border px-1.5 py-0.5 font-mono text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               {cycleName(c)}

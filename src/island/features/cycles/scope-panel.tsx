@@ -59,32 +59,43 @@ export function ScopePanel({
     )
     .slice(0, 25);
 
-  const run = async (body: { add?: string[]; remove?: string[] }, undo: () => void, label: string) => {
+  /**
+   * `undo` is optional, and the undo of an undo does not get one. A toast
+   * whose Undo button is wired to a no-op is a placeholder control, which
+   * AGENTS.md bans, and the user can always press the row button again.
+   *
+   * The catch is not decoration either. `onScope` toasts and rethrows so the
+   * caller can stop, and every call site here is a click handler, so without
+   * this a failed scope escapes as an unhandled rejection.
+   */
+  const run = async (
+    body: { add?: string[]; remove?: string[] },
+    label: string,
+    undo?: () => void,
+  ) => {
     setBusy(true);
     try {
       await onScope(body);
       toast.success(label, {
         duration: 4500,
-        action: { label: "Undo", onClick: undo },
+        ...(undo ? { action: { label: "Undo", onClick: undo } } : {}),
       });
+    } catch {
+      // onScope already surfaced the server's message.
     } finally {
       setBusy(false);
     }
   };
 
   const add = (issue: IssueListItem) =>
-    run(
-      { add: [issue.id] },
-      () => void run({ remove: [issue.id] }, () => {}, `${issue.identifier} removed`),
-      `${issue.identifier} scoped`,
-    );
+    run({ add: [issue.id] }, `${issue.identifier} scoped`, () => {
+      void run({ remove: [issue.id] }, `${issue.identifier} removed`);
+    });
 
   const remove = (issue: IssueListItem) =>
-    run(
-      { remove: [issue.id] },
-      () => void run({ add: [issue.id] }, () => {}, `${issue.identifier} scoped`),
-      `${issue.identifier} removed`,
-    );
+    run({ remove: [issue.id] }, `${issue.identifier} removed`, () => {
+      void run({ add: [issue.id] }, `${issue.identifier} scoped`);
+    });
 
   return (
     <section aria-label="Cycle scope" className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-3 lg:flex-row">
@@ -128,13 +139,20 @@ export function ScopePanel({
           </h2>
           <Input
             aria-label="Search backlog"
-            placeholder="Search unscoped issues"
+            placeholder="Search loaded issues"
             className="my-2 h-8"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
           {candidates.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No unscoped open issues on this team.</p>
+            // Deliberately not "no unscoped issues on this team". This list is
+            // one page of the team's open issues, filtered here, so emptiness
+            // is a fact about what was loaded and nothing more.
+            <p className="text-sm text-muted-foreground">
+              {query.length > 0
+                ? "No match among the loaded issues."
+                : "No unscoped issues among the ones loaded."}
+            </p>
           ) : (
             <ul className="min-h-0 flex-1 overflow-y-auto">
               {candidates.map((issue) => (

@@ -55,6 +55,10 @@ export function CloseCycleDialog({
   const rolling = rolloverSet(scoped, lookup);
   const target = rolloverTarget(cycle, cycles);
   const previewCount = rolling.length;
+  const scopeTotal = cycle.stats.scope.issues;
+  // Partial when the list is paged, and also when the server counts more
+  // issues than arrived: triage-state rows never reach this component.
+  const partial = scopedTruncated || scoped.length < scopeTotal;
 
   const confirm = async () => {
     if (busy) return;
@@ -93,11 +97,23 @@ export function CloseCycleDialog({
         </AlertDialogHeader>
 
         <div className="flex flex-col gap-1 text-sm">
+          {/*
+            The denominator is the SERVER's scope count, not the length of the
+            loaded page. Those differ whenever the cycle is scoped past one
+            page, and printing a page length as "of N scoped issues" states a
+            size the client does not know.
+          */}
           <p data-testid="cy-rollover-preview">
-            {scopedTruncated ? "At least " : ""}
-            {previewCount} of {scoped.length} scoped {scoped.length === 1 ? "issue" : "issues"} would
-            roll over, as of now.
+            {partial ? "At least " : ""}
+            {previewCount} of {scopeTotal} scoped {scopeTotal === 1 ? "issue" : "issues"} would roll
+            over, as of now.
           </p>
+          {partial ? (
+            <p className="text-xs text-muted-foreground" data-testid="cy-rollover-partial">
+              The preview counted the {scoped.length} issues loaded here, so the real number can be
+              higher.
+            </p>
+          ) : null}
           <p className="text-xs text-muted-foreground" data-testid="cy-rollover-target">
             {target
               ? `Destination: ${cycleName(target)}.`

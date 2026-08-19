@@ -8,11 +8,11 @@
  * marks the fresh shell aria-hidden and hides it from role queries.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "@island/app";
 import { installResizeObserver } from "../../../shell/helpers";
 import {
-  clearAriaHiddenLeftovers,
+  resetOverlayArtifacts,
   cycleFixture,
   gotoCurrentCycle,
   mockCycleRoutes,
@@ -21,9 +21,15 @@ import {
 installResizeObserver();
 
 afterEach(() => {
+  // Unmount BEFORE unstubbing fetch. Vitest runs a file's after-hooks ahead of
+  // the global one in tests/setup.ts, so without this the React tree is torn
+  // down after `fetch` is real again, and any request in flight during unmount
+  // escapes to the network. That also leaves Radix overlays half-torn-down,
+  // which is what made these files depend on declaration order.
+  cleanup();
+  resetOverlayArtifacts();
   vi.unstubAllGlobals();
   window.localStorage.clear();
-  clearAriaHiddenLeftovers();
 });
 
 const COMPLETED_C1 = cycleFixture({
@@ -42,6 +48,23 @@ async function openCloseDialog(): Promise<void> {
   await screen.findByTestId("cy-rollover-preview");
 }
 
+/**
+ * Dismiss the dialog before the test ends.
+ *
+ * Unmounting a React root while a Radix modal is open strands its
+ * `aria-hidden` marker and the body scroll lock on nodes that outlive the
+ * tree, and the next test's fresh shell inherits them. That made this file
+ * pass only in declaration order. The app itself never does this: it always
+ * unmounts the dialog through its own close path.
+ */
+async function dismissDialog(): Promise<void> {
+  const cancel = screen.queryByRole("button", { name: "Cancel" });
+  if (cancel) {
+    fireEvent.click(cancel);
+    await waitFor(() => expect(screen.queryByTestId("cy-rollover-preview")).toBeNull());
+  }
+}
+
 describe("close cycle", () => {
   it("previews only the issues the server would roll", async () => {
     mockCycleRoutes();
@@ -50,11 +73,12 @@ describe("close cycle", () => {
     await openCloseDialog();
 
     // The scoped set is 3 open, 2 completed, 1 canceled. Ignoring state
-    // category reads 6; excluding only completed reads 4. The server's rule,
+    // category reads 6, and excluding only completed reads 4. The server's rule,
     // category not in (completed, canceled), reads 3.
     expect(screen.getByTestId("cy-rollover-preview")).toHaveTextContent(
       "3 of 6 scoped issues would roll over, as of now.",
     );
+    await dismissDialog();
     view.unmount();
   });
 
@@ -77,6 +101,7 @@ describe("close cycle", () => {
     // The server picks the earliest non-completed cycle starting at or after
     // this one ends, so the dialog must name that one and not invent a number.
     expect(screen.getByTestId("cy-rollover-target")).toHaveTextContent("Destination: Cycle 3.");
+    await dismissDialog();
     view.unmount();
   });
 
@@ -89,6 +114,7 @@ describe("close cycle", () => {
     expect(screen.getByTestId("cy-rollover-target")).toHaveTextContent(
       "No later cycle exists yet, so one will be created.",
     );
+    await dismissDialog();
     view.unmount();
   });
 
@@ -106,6 +132,7 @@ describe("close cycle", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Close cycle" }));
     expect(await screen.findByText("Cycle is already closed")).toBeInTheDocument();
+    await dismissDialog();
     view.unmount();
   });
 
@@ -122,6 +149,47 @@ describe("close cycle", () => {
     // A second close is a 409, so the control must not be offered at all.
     expect(await screen.findByTestId("cy-asof")).toHaveTextContent("as of close");
     expect(screen.queryByRole("button", { name: "Close cycle" })).toBeNull();
+    view.unmount();
+  });
+
+  it("counts the denominator from the server, and flags a partial preview", async () => {
+    // The server says 9 scoped; the mocked page returns 6. Printing the page
+    // length as "of N scoped issues" states a size the client cannot know, so
+    // the denominator is the server's and the shortfall is called out.
+    mockCycleRoutes({}, [
+      cycleFixture({ stats: { scope: { issues: 9, points: 21 }, completed: { issues: 2, points: 4 } } }),
+    ]);
+    const view = render(<App />);
+    await gotoCurrentCycle();
+    await openCloseDialog();
+
+    expect(screen.getByTestId("cy-rollover-preview")).toHaveTextContent(
+      "At least 3 of 9 scoped issues would roll over, as of now.",
+    );
+    expect(screen.getByTestId("cy-rollover-partial")).toHaveTextContent(
+      "The preview counted the 6 issues loaded here",
+    );
+    await dismissDialog();
+    view.unmount();
+  });
+
+  it("says nothing about drift when the server agrees with the preview", async () => {
+    // Without this, always printing "preview said N" would pass every other
+    // close test in this file.
+    const { sent } = mockCycleRoutes({
+      "POST /api/cycles/c2/close": {
+        cycle: cycleFixture({ status: "completed", closedAt: 1_700_500_000_000 }),
+        rollover: { count: 3, nextCycleId: "c3", nextCycleCreated: false },
+      },
+    });
+    const view = render(<App />);
+    await gotoCurrentCycle();
+    await openCloseDialog();
+    fireEvent.click(screen.getByRole("button", { name: "Close cycle" }));
+
+    await waitFor(() => expect(sent.some((s) => s.key === "POST /api/cycles/c2/close")).toBe(true));
+    expect(await screen.findByText(/3 issues rolled over/)).toBeInTheDocument();
+    expect(screen.queryByText(/preview said/)).toBeNull();
     view.unmount();
   });
 

@@ -3,7 +3,7 @@
  *
  * The list is flat and team-scoped by query parameter rather than a
  * `/api/teams/:id/cycles` path, because M4 owns `src/pages/api/cycles/**` and
- * M1 owns `src/pages/api/teams/**` (§8). `teamId` is required; omitting it is
+ * M1 owns `src/pages/api/teams/**` (§8). `teamId` is required. Omitting it is
  * a 400, not an all-teams list.
  *
  * There is no GET for a single cycle, only PATCH, so R-21 resolves a cycle by

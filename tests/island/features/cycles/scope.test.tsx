@@ -2,14 +2,27 @@
  * CY-01/CY-03 cycle resolution and scoping.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "@island/app";
 import { installResizeObserver } from "../../../shell/helpers";
-import { OTHER_TEAM, cycleFixture, gotoCurrentCycle, mockCycleRoutes } from "./helpers";
+import {
+  OTHER_TEAM,
+  cycleFixture,
+  gotoCurrentCycle,
+  mockCycleRoutes,
+  resetOverlayArtifacts,
+} from "./helpers";
 
 installResizeObserver();
 
 afterEach(() => {
+  // Unmount BEFORE unstubbing fetch. Vitest runs a file's after-hooks ahead of
+  // the global one in tests/setup.ts, so without this the React tree is torn
+  // down after `fetch` is real again, and any request in flight during unmount
+  // escapes to the network. That also leaves Radix overlays half-torn-down,
+  // which is what made these files depend on declaration order.
+  cleanup();
+  resetOverlayArtifacts();
   vi.unstubAllGlobals();
   window.localStorage.clear();
 });
@@ -85,6 +98,20 @@ describe("cycle scoping", () => {
     expect(screen.getAllByRole("button", { name: /Remove PRO-\d+ from cycle/ })).toHaveLength(6);
   });
 
+  it("renders the cycle's own completion percent in the header", async () => {
+    // CY-01's headline number. 2 of 8 scoped is 25, and the points pair is
+    // deliberately different (4 of 20 is 20) so a bar reading the wrong pair
+    // is visible, as is one hardcoded to zero.
+    mockCycleRoutes({}, [
+      cycleFixture({ stats: { scope: { issues: 8, points: 20 }, completed: { issues: 2, points: 4 } } }),
+    ]);
+    render(<App />);
+    await gotoCurrentCycle();
+
+    const bar = await screen.findByRole("progressbar", { name: "Cycle 2 progress" });
+    expect(bar).toHaveAttribute("aria-valuenow", "25");
+  });
+
   it("keeps the backlog to unscoped issues only", async () => {
     mockCycleRoutes();
     render(<App />);
@@ -102,6 +129,10 @@ describe("cycle scoping", () => {
     render(<App />);
     await gotoCurrentCycle();
 
-    expect(await screen.findByText("No active cycle")).toBeInTheDocument();
+    // Both empty branches share the title, so the explainer is the only thing
+    // that distinguishes CY-10 from "this team has no cycle right now".
+    expect(
+      await screen.findByText("No team you can see has cycles enabled. Turn them on in team settings."),
+    ).toBeInTheDocument();
   });
 });

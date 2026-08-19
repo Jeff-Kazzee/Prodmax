@@ -1,6 +1,13 @@
 /**
  * S-16 cycle screen. One component serves R-20 (`/cycle/current`) and R-21
- * (`/cycle/:id`); the route only decides whether a cycle id is supplied.
+ * (`/cycle/:id`). The route only decides whether a cycle id is supplied.
+ *
+ * The team lives in `?cycleTeam=`, not the `?team=` ux-spec §4.16 CY-01 names.
+ * `IssueCreateHost` treats a bare `?team=` anywhere in the app as an intent to
+ * create an issue and opens the modal over whatever screen you asked for, so
+ * using the documented name here would pop a dialog on every team switch and
+ * on every shared cycle link. T-033 fixes that upstream, and this reverts to
+ * `?team=` in the same change.
  *
  * CY-04 asks for the S-08 board engine scoped to the cycle. That engine picks
  * its filter from the pathname, and `/cycle/current` carries no cycle id to
@@ -31,21 +38,38 @@ export function CycleScreen() {
   const session = useSession();
   const wsId = session.activeWorkspace?.id ?? null;
   const cycleId = id ?? null;
-  const state = useCycles(wsId, { cycleId, teamKey: params.get("team") });
+  const state = useCycles(wsId, { cycleId, teamKey: params.get("cycleTeam") });
   const { lookup } = useLookups(wsId);
   const [closeOpen, setCloseOpen] = useState(false);
 
   const cycle = state.cycle;
+  // Keyed on the ids. `cycle` and `state.team` are fresh objects after every
+  // reload, so memoising on the objects hands useIssuesList a new filter each
+  // time, and its mount effect clears the list and refetches on identity alone.
+  const cycleKey = cycle?.id ?? null;
+  const teamKeyId = state.team?.id ?? null;
   const scopeFilters = useMemo(
-    () => (cycle ? scopeFilter(cycle.id) : { combinator: "and" as const, children: [] }),
-    [cycle],
+    () => (cycleKey ? scopeFilter(cycleKey) : { combinator: "and" as const, children: [] }),
+    [cycleKey],
   );
   const backlogFilters = useMemo(
-    () => (state.team ? backlogFilter(state.team.id) : { combinator: "and" as const, children: [] }),
-    [state.team],
+    () => (teamKeyId ? backlogFilter(teamKeyId) : { combinator: "and" as const, children: [] }),
+    [teamKeyId],
   );
-  const scopedList = useIssuesList({ wsId, filters: scopeFilters, sort: "updated:desc" });
-  const backlogList = useIssuesList({ wsId, filters: backlogFilters, sort: "updated:desc" });
+  // Pass a null workspace until the target is known. `useIssuesList` returns
+  // early on a null wsId, and without this both hooks fire a workspace-wide
+  // issue query on mount with a placeholder filter, then refetch once the
+  // cycle resolves: four requests per visit, two of them meaningless.
+  const scopedList = useIssuesList({
+    wsId: cycle ? wsId : null,
+    filters: scopeFilters,
+    sort: "updated:desc",
+  });
+  const backlogList = useIssuesList({
+    wsId: state.team ? wsId : null,
+    filters: backlogFilters,
+    sort: "updated:desc",
+  });
 
   // The DSL has no null predicate, so "unscoped" is a client-side pass.
   const backlog = useMemo(
@@ -111,10 +135,16 @@ export function CycleScreen() {
         cycles={state.cycles}
         onTeam={(key) => {
           // Team is a URL fact so the choice survives a reload and a share.
+          // From a cycle detail view this must be a single navigation: writing
+          // the param first would re-resolve the OLD cycle id against the NEW
+          // team, which finds nothing and flashes "No active cycle".
+          if (cycleId) {
+            navigate(`/cycle/current?cycleTeam=${encodeURIComponent(key)}`);
+            return;
+          }
           const next = new URLSearchParams(params);
-          next.set("team", key);
+          next.set("cycleTeam", key);
           setParams(next, { replace: true });
-          if (cycleId) navigate(`/cycle/current?team=${encodeURIComponent(key)}`);
         }}
         onClose={() => setCloseOpen(true)}
       />
@@ -164,7 +194,7 @@ export function CycleScreen() {
         }}
         onClosed={(nextCycleId) => {
           notifyIssuesChanged();
-          const team = state.team ? `?team=${encodeURIComponent(state.team.key)}` : "";
+          const team = state.team ? `?cycleTeam=${encodeURIComponent(state.team.key)}` : "";
           navigate(`/cycle/${nextCycleId}${team}`);
         }}
       />

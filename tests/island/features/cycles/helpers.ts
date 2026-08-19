@@ -148,34 +148,31 @@ export async function gotoCurrentCycle(): Promise<void> {
 /** Reach R-20 by clicking the sidebar link, which T-006 made live. */
 export async function clickCurrentCycleLink(): Promise<void> {
   const navs = await screen.findAllByRole("navigation", { name: "Workspace sections" });
-  // A previous test in this process can leave a Radix overlay's `aria-hidden`
-  // on a body child, and the freshly rendered shell inherits the mark. Roles
-  // resolve against the accessibility tree, so the sidebar would be present in
-  // the DOM and invisible to this query. Clearing here keeps the failure
-  // legible as a real navigation problem rather than a harness artefact.
-  clearAriaHiddenLeftovers();
   fireEvent.click(within(navs[0] as HTMLElement).getByRole("link", { name: "Current cycle" }));
 }
 
 /**
- * Un-hide the app shell from the accessibility tree.
+ * Undo everything a Radix modal does to the document outside its own tree.
  *
- * Radix marks everything outside an open modal `aria-hidden`, and when a test
- * unmounts while one is open that mark can outlive it and land on the next
- * render's container. Testing Library resolves roles against the accessibility
- * tree, so the shell is then present in the DOM and invisible to every role
- * query, which surfaces as a baffling "unable to find link" on a page that
- * plainly has it.
+ * An open modal sets `aria-hidden` on its siblings, locks body scroll, and
+ * plants focus-guard spans as direct children of `body`. Those live outside
+ * the React root, so unmounting a tree mid-dialog strands them, and the next
+ * render inherits a document that reports the whole shell as hidden. Roles
+ * resolve against the accessibility tree, so every query then fails on a page
+ * that plainly has the element.
  *
- * Only ancestors of the shell nav are touched, so decorative `aria-hidden`
- * icons keep their attribute and cannot leak into an accessible name.
+ * The app never reaches this state on its own: it always closes a dialog
+ * through Radix, which reverses all of it. Only a test harness tearing down a
+ * root mid-dialog gets here, so this is harness hygiene, not a product fix.
  */
-export function clearAriaHiddenLeftovers(): void {
-  for (const nav of Array.from(document.querySelectorAll('[aria-label="Workspace sections"]'))) {
-    let node: Element | null = nav;
-    while (node) {
-      node.removeAttribute("aria-hidden");
-      node = node.parentElement;
-    }
+export function resetOverlayArtifacts(): void {
+  for (const guard of Array.from(document.querySelectorAll("[data-radix-focus-guard]"))) {
+    guard.remove();
   }
+  for (const node of Array.from(document.querySelectorAll("[data-aria-hidden]"))) {
+    node.removeAttribute("aria-hidden");
+    node.removeAttribute("data-aria-hidden");
+  }
+  document.body.removeAttribute("data-scroll-locked");
+  document.body.style.pointerEvents = "";
 }

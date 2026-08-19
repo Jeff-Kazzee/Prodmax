@@ -91,12 +91,13 @@ export function BurnUpChart({
           day {lastDay}
         </text>
       </svg>
-      <p className="font-mono text-xs text-muted-foreground">
+      <p className="font-mono text-xs text-muted-foreground" data-testid="cy-burnup-caption">
         completed {cycle.stats.completed.points} pts · scope {scope} pts · ideal dashed
       </p>
       <p className="text-xs text-muted-foreground">
-        Scope is drawn flat at today's total. Nothing records when an issue entered the cycle, so
-        this chart does not claim a scope history.
+        Both figures are the cycle's own totals. Scope is drawn flat because nothing records when
+        an issue entered the cycle, so this chart does not claim a scope history. The completed
+        line is shaped by the issues loaded on this page.
       </p>
     </section>
   );

@@ -14,10 +14,23 @@ export function dayXofY(cycle: CycleDto, now: number): { day: number; total: num
 }
 
 /**
- * The set `closeCycle` would roll over, re-applied client-side.
+ * The set `closeCycle` would roll over, re-applied to the rows the client has.
  *
  * The server's rule is: issues on this cycle, not soft-deleted, whose state
- * category is not 'completed' and not 'canceled'. This mirrors it exactly.
+ * category is not 'completed' and not 'canceled'. This applies that same
+ * predicate, but it is a preview and not a mirror, and the difference is worth
+ * stating because the docblock used to claim otherwise.
+ *
+ * Two ways the preview can under-report, both inherent to reading from a list:
+ *
+ *  - `useIssuesList` ANDs `statusCategory neq triage` onto every view, so a
+ *    scoped issue sitting in a triage state never reaches this function. The
+ *    server rolls it.
+ *  - the list is one page, so a cycle scoped past the page size is truncated.
+ *    The dialog says "at least" when it knows that.
+ *
+ * Both are why the receipt reports the server's `rollover.count` rather than
+ * this number.
  *
  * Two deliberate non-exclusions. An archived issue still rolls, because the
  * server's predicate tests `deleted_at`, not `archived_at`. An issue whose
@@ -42,11 +55,21 @@ export interface BurnPoint {
 /**
  * CY-05 burn-up, honest about what the client can know.
  *
- * The completed series is real: it is the cumulative estimate of scoped issues
- * bucketed by `completedAt`. The scope series is NOT a series. Nothing records
- * when an issue entered a cycle, so scope is a single number, today's total,
- * which the chart draws as a flat reference line and the caption names as such.
- * A stepped scope line would be an invention. See T-031.
+ * Scope is the SERVER's `stats.scope.points`, never a sum over the rows on
+ * screen. Summing the rows disagrees with the header three ways at once: the
+ * server excludes canceled issues and the list does not, the list hides triage
+ * ones the server counts, and the list is a single page. On a closed cycle it
+ * is worse than a disagreement, because the frozen snapshot counts what the
+ * cycle held at close while the live query returns only what did not roll out,
+ * so a summed scope can come out below the completed total it is drawn against.
+ *
+ * Scope is also not a series. Nothing records when an issue entered a cycle, so
+ * it is one number drawn flat and captioned as such. A stepped line would be an
+ * invention. See T-031.
+ *
+ * The completed series is the one real series here: scoped issues bucketed by
+ * `completedAt`. It is still drawn from the loaded page, so it is a shape, not
+ * an authority, and the caption's completed figure comes from the server.
  */
 export function burnUpSeries(
   cycle: CycleDto,
@@ -56,7 +79,7 @@ export function burnUpSeries(
 ): { points: BurnPoint[]; scope: number } {
   const dayMs = 86_400_000;
   const { total } = dayXofY(cycle, now);
-  const scope = issues.reduce((sum, i) => sum + (i.estimate ?? 0), 0);
+  const scope = cycle.stats.scope.points;
   const elapsed = Math.min(total, Math.max(0, Math.floor((now - cycle.startsAt) / dayMs)));
 
   const doneByDay = new Array<number>(total + 1).fill(0);
@@ -85,20 +108,30 @@ export function burnUpSeries(
 
 /**
  * CY-02 capacity: the mean completed points of the last three closed cycles.
- * Returns null when no cycle has closed, because the ux-spec's headcount
- * fallback needs a team-members endpoint that does not exist (T-033).
+ *
+ * Returns the sample size alongside the number, because fewer than three
+ * cycles may have closed and a label that says "mean of last 3" over a sample
+ * of one is a claim the data does not support. Null when nothing has closed:
+ * the ux-spec's headcount fallback needs a team-members endpoint that does not
+ * exist (T-031).
  */
-export function capacityEstimate(cycles: CycleDto[]): number | null {
+export function capacityEstimate(cycles: CycleDto[]): { points: number; sample: number } | null {
   const closed = cycles
     .filter((c) => c.status === "completed")
     .sort((a, b) => (b.closedAt ?? b.endsAt) - (a.closedAt ?? a.endsAt))
     .slice(0, 3);
   if (closed.length === 0) return null;
   const sum = closed.reduce((acc, c) => acc + c.stats.completed.points, 0);
-  return Math.round(sum / closed.length);
+  return { points: Math.round(sum / closed.length), sample: closed.length };
 }
 
-/** CY-08: completed cycles serve a snapshot frozen at close, labelled as of then. */
+/**
+ * CY-08: completed cycles serve a snapshot frozen at close, labelled as of
+ * then. The timestamp is `closedAt`, which is when the freeze actually
+ * happened. `endsAt` is the scheduled end and is the wrong answer for a cycle
+ * ended early through the surgery menu, so it is only a fallback for a row
+ * that somehow has no close time.
+ */
 export function asOfCaption(cycle: CycleDto): string | null {
   if (cycle.status !== "completed") return null;
   const at = cycle.closedAt ?? cycle.endsAt;
