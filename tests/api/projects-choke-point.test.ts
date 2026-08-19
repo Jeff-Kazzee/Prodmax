@@ -38,9 +38,21 @@ function sourceFiles(dir: string): string[] {
   return out;
 }
 
-function rawIssueWrites(source: string): number {
-  const matches = source.match(/\.(update|insert|delete)\(\s*issues\s*\)/g);
-  return matches?.length ?? 0;
+/**
+ * Two shapes reach the table: the Drizzle builder, and raw SQL through `run`.
+ * Matching only the builder would let `` db.run(sql`UPDATE issues ...`) `` past,
+ * and that shape already exists in the tree for another table.
+ */
+/** Prose is not a write. "we update issues here" must not trip the gate. */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/.*/g, " ");
+}
+
+function rawIssueWrites(input: string): number {
+  const source = withoutComments(input);
+  const builder = source.match(/\.(update|insert|delete)\(\s*issues\s*\)/g)?.length ?? 0;
+  const raw = source.match(/(update|insert\s+into|delete\s+from)\s+issues/gi)?.length ?? 0;
+  return builder + raw;
 }
 
 describe("issue-write choke-point", () => {

@@ -17,6 +17,7 @@ import {
   requireStateOnTeam,
   requireTeamInWorkspace,
   withLabels,
+  assertParentsInWorkspace,
 } from "./issues-helpers";
 import { recordCreatedHistory, snapshotDescription } from "./issues-history";
 import { addSubscriber } from "./issues-relations";
@@ -31,6 +32,7 @@ export function createIssue(
 ): IssueRow & { labelIds: string[]; suggestions: [] } {
   const team = requireTeamInWorkspace(wsId, input.teamId);
   assertIssueTeamAccess(actor.role, actor.userId, team.id);
+  assertParentsInWorkspace(wsId, input);
   const state = input.stateId
     ? requireStateOnTeam(team.id, input.stateId)
     : defaultStateForTeam(team);

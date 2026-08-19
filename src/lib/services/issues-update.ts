@@ -14,6 +14,7 @@ import {
   requireTeamInWorkspace,
   stateTimestamps,
   withLabels,
+  assertParentsInWorkspace,
 } from "./issues-helpers";
 import { recordFieldChange, snapshotDescription } from "./issues-history";
 import { addSubscriber, downgradeBlockersIfResolved } from "./issues-relations";
@@ -30,6 +31,7 @@ export function updateIssue(
 ): IssueRow & { labelIds: string[] } {
   const issue = requireLiveIssue(wsId, idOrIdentifier, actor.role, actor.userId);
   assertExpectedVersion(issue, expectedVersion);
+  assertParentsInWorkspace(wsId, input);
   const now = Date.now();
   const updated = runIssueWrite(wsId, actor.userId, (w) => {
     const patch: Partial<typeof issues.$inferInsert> = { updatedAt: now, version: issue.version + 1 };

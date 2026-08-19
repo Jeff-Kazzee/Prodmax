@@ -227,6 +227,12 @@ export function runIssueWrite<T>(
     active = buffer;
     try {
       const result = body(makeWriter(buffer, wsId, actorId, effective));
+      // An async body would commit here, flush a partial buffer, and record
+      // every later write into a dead one with `active` already null. Silent
+      // event loss, so refuse it the way withIssueConsumers does.
+      if (result instanceof Promise) {
+        throw new Error("runIssueWrite takes a synchronous body");
+      }
       flush(buffer);
       return result;
     } finally {
