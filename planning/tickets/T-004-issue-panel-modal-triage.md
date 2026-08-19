@@ -1,8 +1,8 @@
 # T-004 — M3c Issue panel + new-issue modal + triage
 
-status: open
+status: in-review
 module: M3 issues engine
-assignee: —
+assignee: Cursor Grok 2026-08-18
 owns: src/island/features/issue-detail/**, src/island/features/issue-create/**, src/island/features/triage/**, edits to src/island/app/routes.ts (route swaps only), tests/island/features/{issue-detail,issue-create,triage}*
 depends-on: T-003
 
@@ -46,3 +46,36 @@ RTL tests: panel open/close focus restore, tab lazy fetch, property edit
 optimism + rollback, comment flows, modal create + create-another + draft
 restore, triage keymap. All four gates green; one e2e: create issue via
 `C`, open panel via row, edit priority, Esc focus back.
+
+## Work log — 2026-08-18 Cursor Grok
+
+**Files:** `src/island/features/issue-detail/**` (S-12 panel/page, property
+strip, lazy tabs, comments), `src/island/features/issue-create/**` (S-13
+modal, localStorage draft, C/V via ShellState), `src/island/features/triage/**`
+(S-14 inbox). Route swaps in `src/island/app.tsx`. Hide-triage in
+`use-issues.ts` unless `includeTriage`.
+
+**M2 additive (constraint):** C/V, New issue, and overlay flags live on
+`shell-state.tsx` so the keyboard layer, topbar, and bottom-nav share one
+create request. Keyboard layer pauses while the modal is open. `g t` joins
+existing `g b` for Triage. CSRF Origin matching treats localhost and
+127.0.0.1 as the same host so browser POSTs from preview work.
+
+**Tests:** panel Esc + focus restore, comments lazy fetch, priority
+rollback, Cmd+Enter comment, modal create-another + draft restore, triage
+`1` accept. e2e: C, create, open panel, edit priority, Esc restores row
+focus. CSRF unit: Origin `localhost:4321` vs listen address `127.0.0.1`.
+
+**Gates:** `npm run check` 0 errors · `npm test` 121/121 · `npm run build`
+clean · `npm run e2e` 8/8.
+
+**Deviations / follow-ups:**
+- No drafts or attachments API in T-002. Drafts are localStorage. Attachments
+  tab is empty honest copy.
+- Dedup banner is silent on 404 (T-012). Other errors toast.
+- Snooze is local until M8. Merge is identifier + duplicate relation, not a
+  side-by-side diff.
+- Project/cycle/milestone chips omitted (T-005). AI summarize/related wait
+  T-011/T-012. SSE/presence wait T-016.
+- Favorites sidebar SB-03 still needs an M2 constraint amendment (T-003).
+
