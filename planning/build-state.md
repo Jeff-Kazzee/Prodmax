@@ -1,9 +1,9 @@
 # Prodmax Build State — HANDOFF (updated 2026-08-18 after T-002)
 
-Read `planning/handoffs/2026-08-18-t003-ready.md` in a fresh session, then
+Read `planning/handoffs/2026-08-18-t005-ready.md` in a fresh session, then
 `AGENTS.md` and `planning/tickets/README.md`.
 Project root: `C:\Users\jeffk\big-projects\Prodmax`. GitHub default is `dev`.
-Next ticket: **T-003** (issue views UI).
+Next ticket: **T-005** (projects/cycles API).
 
 ## T-001 amendment (2026-08-18)
 
@@ -58,23 +58,23 @@ Feature work lands on `feat/*` or `fix/*` cut from `dev`, then PRs into `dev`.
 
 1. `npm test` → 96 passing · `npm run check` → 0 errors (fast confidence)
 2. Start dev: `npm run dev` (background), check "Local:" port, curl `/api/health`
-3. Claim T-003 on a feature branch from `dev`. Pickup:
-   `planning/handoffs/2026-08-18-t003-ready.md`.
+3. Claim T-005 on a feature branch from `dev`. Pickup:
+   `planning/handoffs/2026-08-18-t005-ready.md`.
 
 ## Handoff note (2026-08-18)
 
-T-001 and T-002 are `done`. Next: T-003. Tree clean; no in-flight ticket.
+T-001 through T-004 are `done`. Next: T-005. Tree clean; no in-flight ticket.
 Every session follows `planning/tickets/README.md`. GitHub default is `dev`.
 Feature PRs target `dev` only. Promote `dev` → `prod` only when Jeff asks
 to release. Do not land work on `main`.
-Pickup brief: `planning/handoffs/2026-08-18-t003-ready.md`.
+Pickup brief: `planning/handoffs/2026-08-18-t005-ready.md`.
 
 ## Next modules (one agent each, exclusive ownership per architecture §8)
 
 **The work queue now lives in `planning/tickets/` (T-001…T-021)** — read
 `planning/tickets/README.md` for the claim/verify protocol; each ticket is a
-self-contained brief (owns/depends-on/deliverables/acceptance). T-001 and
-T-002 landed. Next: T-003. Remaining order: T-003..T-004 M3 issues UI →
+self-contained brief (owns/depends-on/deliverables/acceptance). T-001 through
+T-004 landed. Next: T-005. Remaining order:
 T-005/T-006 M4 → T-007..T-010 M5 docs → T-011/T-012 M6a deterministic AI →
 T-013/T-014 M6b agent chat → T-015 M7 → T-016/T-017 M8 realtime → T-018 M9 →
 T-019 M10 → T-020 verification sweep → T-021 polish. Parallel-safe chains
