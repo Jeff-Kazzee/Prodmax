@@ -23,6 +23,7 @@ import { IssuePage } from "@island/features/issue-detail";
 import { NewIssueRoute } from "@island/features/issue-create";
 import { TriageScreen } from "@island/features/triage";
 import { ProjectScreen, ProjectsListScreen } from "@island/features/projects";
+import { CycleScreen } from "@island/features/cycles";
 
 /** R-13: /team/:key → the team's default view. */
 function TeamDefaultRedirect() {
@@ -62,6 +63,7 @@ function shellElement(path: string, screen: string): React.ReactElement {
   if (PROJECT_SCREEN_PATHS.has(path)) return <ProjectScreen />;
   if (ISSUE_VIEW_PATHS.has(path)) return <IssueViewsScreen />;
   if (path === "/projects") return <ProjectsListScreen />;
+  if (path === "/cycle/current" || path === "/cycle/:id") return <CycleScreen />;
   if (path === "/issue/:identifier") return <IssuePage />;
   if (path === "/team/:teamKey/new") return <NewIssueRoute />;
   if (path === "/triage") return <TriageScreen />;
