@@ -17,7 +17,7 @@ import { POST as createProjectRoute } from "@/pages/api/projects/index";
 import { POST as createIssueRoute } from "@/pages/api/issues/index";
 import { PATCH as patchState, DELETE as deleteState } from "@/pages/api/states/[id]/index";
 import { repairProjectProgress } from "@/lib/services/projects-progress";
-import { apiReq, bodyOf, cookieFor, createApiDb, sessionTokenFrom, teardownApiDb } from "./helpers";
+import { BASE, apiReq, bodyOf, cookieFor, createApiDb, sessionTokenFrom, teardownApiDb } from "./helpers";
 
 let sqlite: Database.Database;
 
@@ -311,6 +311,58 @@ describe("T-023: state writes repair project progress", () => {
       category: string;
     };
     expect(row.category).toBe("started");
+  });
+
+  /**
+   * A PATCH request whose body only arrives once `inGap` has run. That is the
+   * suspension inside `parseBodyOptional`, which awaits `request.text()`, so
+   * `inGap` stands in for a second writer landing between the handler's first
+   * read of the state row and its decision about whether a repair is owed.
+   */
+  function requestWithBodyGap(path: string, cookie: string, body: unknown, inGap: () => void): Request {
+    const stream = new ReadableStream({
+      pull(controller) {
+        inGap();
+        controller.enqueue(new TextEncoder().encode(JSON.stringify(body)));
+        controller.close();
+      },
+    });
+    return new Request(`${BASE}${path}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie, "x-prodmax-test": "1" },
+      body: stream,
+      // @ts-expect-error node's fetch requires duplex for a stream body
+      duplex: "half",
+    });
+  }
+
+  it("PATCH survives a concurrent recategorize landing in the parseBody gap", async () => {
+    const e = await env("patch-toctou@x.com", "patch-toctou-ws");
+    const started = statesByCategory(e.teamId).started;
+    const projectId = await seedProject(e, "Alpha", started, [4]);
+
+    // Writer B completes entirely inside writer A's await gap: it recategorizes
+    // the state to completed and repairs, leaving the cache at 100.
+    let fired = 0;
+    const request = requestWithBodyGap(`/states/${started}`, e.cookie, { category: "started" }, () => {
+      fired += 1;
+      sqlite.prepare("UPDATE states SET category = 'completed' WHERE id = ?").run(started);
+      repairProjectProgress(e.wsId, projectId);
+    });
+
+    const res = await patchState({ request, params: { id: started } });
+    expect(res.status).toBe(200);
+    expect(fired).toBe(1);
+
+    // A writes the category back to started, so nothing is completed and the
+    // cache owes 0. Comparing against A's pre-await snapshot instead of a row
+    // re-read inside the transaction sees started against started, skips the
+    // repair, and leaves writer B's 100 standing over a started state.
+    const state = sqlite.prepare("SELECT category FROM states WHERE id = ?").get(started) as {
+      category: string;
+    };
+    expect(state.category).toBe("started");
+    expect(storedCache(projectId)).toEqual({ percent: 0, done: 0, total: 4, issuesDone: 0, issuesTotal: 1 });
   });
 
   it("DELETE rolls the state back when the progress consumer fails", async () => {

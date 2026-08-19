@@ -156,6 +156,10 @@ export const DELETE = route(async (ctx: Ctx) => {
       .from(issues)
       .where(and(eq(issues.workspaceId, team.workspaceId), eq(issues.stateId, state.id)))
       .all();
+    // Loop-invariant: downgradeBlockersIfResolved re-reads the state per call,
+    // and it is a no-op unless the fallback resolves the issue. Checking once
+    // skips one SELECT per issue in the common case.
+    const fallbackResolves = fallback.category === "completed" || fallback.category === "canceled";
     for (const before of befores) {
       // Per row, not writeMany: stateTimestamps reads each issue's own
       // startedAt and completedAt, so the patch is not uniform across the batch.
@@ -171,7 +175,12 @@ export const DELETE = route(async (ctx: Ctx) => {
       });
       // Parity with the canonical state change in updateIssue: landing in a
       // completed or canceled category downgrades this issue's blocks (FM-016).
-      if (before.deletedAt === null) downgradeBlockersIfResolved(before, fallback.id);
+      // Trashed rows are skipped here and above, matching updateIssue, which
+      // reaches only live rows through requireLiveIssue. They still get
+      // repointed and re-timestamped, because the foreign key demands it.
+      if (before.deletedAt === null && fallbackResolves) {
+        downgradeBlockersIfResolved(before, fallback.id);
+      }
     }
     // Last: the FK above is still pointing here until every write lands.
     db.delete(states).where(eq(states.id, state.id)).run();

@@ -154,9 +154,12 @@ no change, and skips the repair the first one just made necessary. Result is a
 state reading `started` with counters saying `completed`, which is exactly the
 corruption this ticket exists to remove, reintroduced inside the optimization
 added to avoid needless repairs. Fixed by re-reading the state row inside the
-transaction and computing `recategorized` from the fresh value. Reasoned, not
-test-covered: the suite is single-threaded and this is a genuine interleaving,
-so no test here proves it.
+transaction and computing `recategorized` from the fresh value. Test-covered,
+using a seam the fourth reviewer built: a request whose body is a
+`ReadableStream` runs the competing writer inside `pull`, which is exactly the
+suspension. Falsified: comparing against the snapshot rather than the re-read
+fails with `expected { percent: 100 } to deeply equal { percent: 0 }`, a cache
+reading fully done over a state reading `started`.
 
 **2. The reassignment was a counter-grade write but not a state-grade one.**
 `updateIssue` does four things on a state change: `noteState`,
@@ -219,6 +222,37 @@ two write shapes out of fifteen probed, never scans `scripts/`, and does not
 watch `states.category` at all, which is the exact class this ticket fixes. The
 zero this ticket earned is real for raw `issues` writes in `src/` and proves
 less than the Acceptance section implies.
+
+### Fourth reviewer, executed rather than read
+
+Sixteen adversarial probes against the committed tree, and it could not break
+the fix. Verified by execution, not argument: the generated `groupBy` SQL and
+its rows, DELETE rollback under a throwing consumer, PATCH rollback under a
+SQLite `RAISE(ABORT)` on `projects`, reassign-before-delete being provably
+required under `foreign_keys = ON`, `PRAGMA foreign_key_check` clean afterward,
+all five triage team shapes leaving nothing pointed at the deleted state, and
+every project cache equal to an independent from-scratch recompute across ten
+differential-oracle configurations.
+
+Three findings landed as code. The TOCTOU seam above. One `SELECT` per issue
+saved by hoisting the `fallbackResolves` check out of the loop, since
+`downgradeBlockersIfResolved` re-reads the state on every call and is a no-op
+unless the fallback resolves the issue. And a comment recording that trashed
+rows are deliberately silent in history while still being repointed.
+
+Measured cost after the per-row change: 300 issues in 167 ms, 300 issue UPDATEs
+folding to one `UPDATE projects`, which is the consumer design working.
+
+**One finding was about my process, and it is fair.** The reviewer was handed a
+diff and I kept editing the tree underneath it, so it spent probes chasing a
+defect I had already fixed mid-review. A review artifact should be a frozen
+commit, not a working tree. Next time: commit first, review the commit.
+
+**Not fixed, judged not worth it.** The workspace predicate on the `befores`
+query turns a hand-corrupted cross-workspace row into an opaque 500 rather than
+silently repointing it. Reaching it requires corrupting a row directly, since
+`state -> team -> workspace` already determines the workspace, and failing loudly
+inside a transaction is the better of the two outcomes.
 
 **Known limit, not fixed.** DELETE now runs one UPDATE and one SELECT per issue
 rather than one batched pair, plus one history INSERT per live issue, all inside
