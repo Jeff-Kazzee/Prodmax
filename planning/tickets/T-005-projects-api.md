@@ -1,6 +1,6 @@
 # T-005 — M4a Projects/cycles API
 
-status: in-review
+status: done
 module: M4 projects & cycles
 assignee: kimi-code-swarm 2026-08-19
 owns: src/pages/api/projects/**, src/pages/api/project-updates/**, src/pages/api/milestones/**, src/pages/api/cycles/**, src/lib/services/{projects,project-updates,milestones,cycles}*, src/lib/validation/{projects,cycles}*, tests/api/{projects,cycles}*, and for the remediation only, per the §8 recorded amendment of 2026-08-19: src/lib/services/issues-events.ts, src/lib/services/issues-update.ts, src/lib/services/issues.ts, src/lib/services/issues-bulk.ts, src/lib/services/issues-history.ts
@@ -154,3 +154,29 @@ as crossing `completed` would have drifted on.
 dead `teams.next_cycle_number` needs a migration ticket. The archived-issue
 question in §2.4 needs a product decision. The e2e suite is not idempotent
 against an accumulated `data/prodmax.db`.
+
+### Correction, same day
+
+The entry above originally claimed all eleven phases landed. Ten had. Phase 7,
+cross-workspace parenting validation, was never assigned and never
+implemented, and the overview's own gate said not to advance this ticket until
+phases 1 through 7 were green. A cross-model audit of the decision trail caught
+it, not the gates, which were green throughout.
+
+Finding 4's closure statement was true only for the half it named. The counter
+write was protected by phase 2's workspace predicate, so a foreign project id
+could not move another tenant's numbers. The reference itself stood: a foreign
+`projectId` on create returned 201 and stored silently, and on patch returned
+200. Phase 7 now rejects all three parenting ids with `VALIDATION` at 400, and
+three of its four tests fail with the guard removed.
+
+Two hardening items landed with it. `runIssueWrite` refuses an async body, and
+the source-tree gate catches raw SQL writes rather than only the Drizzle
+builder.
+
+Three questions the audit raised are filed as T-024 rather than fixed here. All
+three are design decisions that bind T-016 and M9, and none of them break
+anything while the progress counter is the only consumer.
+
+Final gates: `npm run check` 242 files, 0 errors. `npm test` 197 passed in 44
+files. `npm run build` clean. `npm run e2e` 8 passed.

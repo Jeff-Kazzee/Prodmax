@@ -74,7 +74,7 @@ at ≤6 logins.
 | T-002 | M3a Issues API + services | done |
 | T-003 | M3b Issue views UI (list/board/table/filter/views) | done |
 | T-004 | M3c Issue panel + new-issue modal + triage | done |
-| T-005 | M4a Projects/cycles API | in-review |
+| T-005 | M4a Projects/cycles API | done |
 | T-006 | M4b Projects/cycles UI | open |
 | T-007 | M5a Docs API (pages/blocks/templates/search) | open |
 | T-008 | M5b Docs home + page tree + trash | open |
@@ -93,6 +93,7 @@ at ≤6 logins.
 | T-021 | Polish: README, badges, release | open |
 | T-022 | T-005 remediation spec amendments (docs only) | done |
 | T-023 | Workflow state writes corrupt project progress | open |
+| T-024 | Consumer policy and version monotonicity (pre-T-016) | open |
 
 Parallelism note: tickets in different chains are file-disjoint per
 architecture §8 and MAY run in parallel (e.g. the T-007…T-010 docs chain vs
