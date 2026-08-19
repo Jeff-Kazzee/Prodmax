@@ -12,7 +12,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@island/components/ui/tooltip";
-import { PRIMARY_NAV } from "./nav-items";
+import { MORE_NAV, PRIMARY_NAV } from "./nav-items";
 import { TeamsSection } from "./teams-section";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { useTeamsData } from "./use-workspace-data";
@@ -101,7 +101,12 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
 
       <nav aria-label="Workspace sections" className="flex-1 overflow-y-auto px-2 pb-2">
         <ul>
-          {PRIMARY_NAV.map((item) => (
+          {/*
+            MORE_NAV joins the sidebar with T-006: Projects and Current cycle
+            are live screens now, and until this they reached the sidebar
+            nowhere. Only the mobile bottom nav and the palette listed them.
+          */}
+          {[...PRIMARY_NAV, ...MORE_NAV].map((item) => (
             <li key={item.id}>
               <NavLink
                 to={item.path}
