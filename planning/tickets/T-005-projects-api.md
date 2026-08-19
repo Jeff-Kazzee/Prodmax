@@ -1,8 +1,8 @@
 # T-005 — M4a Projects/cycles API
 
-status: open
+status: claimed
 module: M4 projects & cycles
-assignee: —
+assignee: kimi-code-swarm 2026-08-19
 owns: src/pages/api/projects/**, src/pages/api/project-updates/**, src/pages/api/milestones/**, src/pages/api/cycles/**, src/lib/services/{projects,project-updates,milestones,cycles}*, src/lib/validation/{projects,cycles}*, tests/api/{projects,cycles}*
 depends-on: T-002
 
