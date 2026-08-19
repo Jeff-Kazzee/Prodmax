@@ -19,11 +19,7 @@ const CHOKE_POINT = "src/lib/services/issues-events.ts";
  * Raw writes that remain, each with the ticket that owns it. When a phase or a
  * ticket lands, its entry is DELETED from this map, never edited upward.
  */
-const KNOWN_VIOLATIONS: Record<string, number> = {
-  // T-023: PATCH and DELETE /api/states/:id change what an issue contributes
-  // without writing the issue. The reassignment on DELETE is the raw write.
-  "src/pages/api/states/[id]/index.ts": 1,
-};
+const KNOWN_VIOLATIONS: Record<string, number> = {};
 
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
@@ -75,6 +71,6 @@ describe("issue-write choke-point", () => {
   it("the total is the number this gate reports", () => {
     const total = Object.values(KNOWN_VIOLATIONS).reduce((a, b) => a + b, 0);
     // 11 before phase 3. 4 after phases 3 to 6. 1 after phase 9. 0 after T-023.
-    expect(total).toBe(1);
+    expect(total).toBe(0);
   });
 });
