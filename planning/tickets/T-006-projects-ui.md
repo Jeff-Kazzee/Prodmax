@@ -1,6 +1,6 @@
 # T-006 — M4b Projects/cycles UI
 
-status: in-review
+status: done
 module: M4 projects & cycles
 assignee: claude-opus-5 session 6858dcdc, 2026-08-19
 owns: src/island/features/projects/**, src/island/features/cycles/**, edits to src/island/app/routes.ts (route swaps only), tests/island/features/{projects,cycles}*
@@ -35,7 +35,10 @@ project → add issue → complete it → progress bar moves.
 
 ## Work log
 
-Session `6858dcdc`, 2026-08-19. Branch `feat/t-006-projects-cycles-ui`.
+Session `6858dcdc`, 2026-08-19. Branch `feat/t-006-projects-cycles-ui`,
+[PR 13](https://github.com/Jeff-Kazzee/Prodmax/pull/13). CI green, and the log
+confirms the four gates really ran. It prints `PASS test counts unparsed`,
+which is T-027 and not a failure.
 
 ### Gates
 
