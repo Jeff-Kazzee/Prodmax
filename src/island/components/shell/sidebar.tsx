@@ -104,7 +104,7 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
           {/*
             MORE_NAV joins the sidebar with T-006: Projects and Current cycle
             are live screens now, and until this they reached the sidebar
-            nowhere — only the mobile bottom nav and the palette listed them.
+            nowhere. Only the mobile bottom nav and the palette listed them.
           */}
           {[...PRIMARY_NAV, ...MORE_NAV].map((item) => (
             <li key={item.id}>
