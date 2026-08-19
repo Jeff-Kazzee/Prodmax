@@ -16,7 +16,12 @@ concurrency:
 jobs:
   gates:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # A cold run takes about 13 minutes, almost all of it the browser
+    # download: the first green run was 12m50s, and the very next one was
+    # killed at 20m17s inside `playwright install` on a docs-only commit. A
+    # warm run with the cache below is about 2 minutes. 30 leaves room for a
+    # cache miss without the timeout being the thing that reports it.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -27,8 +32,24 @@ jobs:
 
       - run: npm ci
 
+      # Keyed on the lockfile, so a Playwright version bump invalidates it and
+      # nothing else does. A red check that is really a cancelled download
+      # trains a reader to re-run rather than to look, which is worse than no
+      # check at all.
+      - name: cache playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: install playwright browsers
         run: npx playwright install --with-deps chromium
+
+      # The cached browsers still need their system libraries on a fresh runner.
+      - name: install playwright system deps
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       - name: migrate and seed
         run: |
@@ -36,7 +57,9 @@ jobs:
           node scripts/seed.ts
 
       # One runner for all four so a failure cannot be lost in a pipeline exit
-      # code. It prints a verdict block last and exits non-zero on any failure.
+      # code. It prints a verdict block last and exits non-zero on any failure,
+      # and exit 2 specifically for gates that passed without being able to
+      # report their counts (T-027).
       - name: run the four gates
         run: node scripts/gates.mjs
 
