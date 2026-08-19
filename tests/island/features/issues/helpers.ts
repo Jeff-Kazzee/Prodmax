@@ -14,7 +14,7 @@ export const TEAM = {
   description: null,
   timezone: null,
   position: "a",
-  triageEnabled: 0,
+  triageEnabled: 1,
   cyclesEnabled: 0,
 };
 
@@ -34,6 +34,24 @@ export const STATE_PROG = {
   category: "started",
   position: "b",
   color: "#3366aa",
+};
+
+export const STATE_TRIAGE = {
+  id: "st-triage",
+  teamId: "t1",
+  name: "Triage",
+  category: "triage",
+  position: "z",
+  color: "#b08cf2",
+};
+
+export const STATE_CANCELED = {
+  id: "st-canceled",
+  teamId: "t1",
+  name: "Canceled",
+  category: "canceled",
+  position: "y",
+  color: "#666666",
 };
 
 export function issueFixture(over: Partial<IssueListItem> = {}): IssueListItem {
@@ -65,6 +83,32 @@ export function issueFixture(over: Partial<IssueListItem> = {}): IssueListItem {
   };
 }
 
+export function issueDetail(over: Partial<IssueListItem> & { descriptionMd?: string } = {}) {
+  const { descriptionMd, ...rest } = over;
+  return {
+    ...issueFixture(rest),
+    descriptionMd: descriptionMd ?? "Fix the race on refresh.",
+    triagedAt: null,
+  };
+}
+
+export function commentFixture(over: Record<string, unknown> = {}) {
+  return {
+    id: "c1",
+    workspaceId: "ws1",
+    entityType: "issue",
+    entityId: "iss1",
+    parentId: null,
+    authorId: "u1",
+    bodyMd: "Looks good",
+    resolvedAt: null,
+    resolvedBy: null,
+    createdAt: 1,
+    updatedAt: 1,
+    ...over,
+  };
+}
+
 export function mockFetchPrefix(
   routes: Record<string, unknown | ((url: string, init?: RequestInit) => unknown)>,
 ): Mock {
@@ -84,21 +128,26 @@ export function mockFetchPrefix(
     }
     const body = typeof hit === "function" ? hit(path, init) : hit;
     if (body instanceof Response) return Promise.resolve(body);
-    const status = method === "PATCH" || method === "POST" ? 200 : 200;
-    return Promise.resolve(jsonResponse(status, body));
+    return Promise.resolve(jsonResponse(200, body));
   });
   vi.stubGlobal("fetch", impl);
   return impl;
 }
 
 export function defaultIssueRoutes(issues: IssueListItem[] = [issueFixture()]): Record<string, unknown> {
+  const detail = issueDetail(issues[0] ?? issueFixture());
   return {
     "GET /api/auth/me": DEMO_ME,
     "GET /api/teams": { data: [TEAM] },
-    "GET /api/teams/t1/states": { data: [STATE_TODO, STATE_PROG] },
+    "GET /api/teams/t1/states": { data: [STATE_TODO, STATE_PROG, STATE_TRIAGE, STATE_CANCELED] },
     "GET /api/labels": { data: [] },
     "GET /api/workspaces/ws1/members": { data: [{ userId: "u1", name: "Demo User" }] },
     "GET /api/issues": { data: issues, nextCursor: null },
     "GET /api/views": { data: [], nextCursor: null },
+    "GET /api/issues/PRO-1": { issue: detail },
+    "GET /api/issues/iss1": { issue: detail },
+    "GET /api/issues/PRO-1/subscribers": { data: [{ issueId: "iss1", userId: "u1", reason: "created" }] },
+    "PATCH /api/issues/PRO-1": { issue: detail },
+    "PATCH /api/issues/iss1": { issue: detail },
   };
 }

@@ -38,6 +38,7 @@ export function IssueRow({
   return (
     <div
       role="row"
+      tabIndex={0}
       data-issue-id={issue.id}
       data-identifier={issue.identifier}
       aria-selected={selected}

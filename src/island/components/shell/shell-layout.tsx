@@ -19,6 +19,8 @@ import { ShortcutsHelp } from "./shortcuts-help";
 import { KeyboardLayer } from "./keyboard-layer";
 import { useShellState } from "./shell-state";
 import { useViewport } from "./use-viewport";
+import { IssuePanelHost } from "@island/features/issue-detail";
+import { IssueCreateHost } from "@island/features/issue-create";
 
 function ShellSkeleton() {
   return (
@@ -133,6 +135,8 @@ export function ShellLayout() {
       ) : null}
 
       <KeyboardLayer />
+      <IssueCreateHost />
+      <IssuePanelHost />
       <CommandPalette />
       <ShortcutsHelp />
     </>

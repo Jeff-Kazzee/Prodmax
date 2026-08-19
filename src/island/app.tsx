@@ -19,6 +19,9 @@ import Signup from "./routes/Signup";
 import ForgotPassword from "./routes/ForgotPassword";
 import AcceptInvite from "./routes/AcceptInvite";
 import { IssueViewsScreen } from "@island/features/issues";
+import { IssuePage } from "@island/features/issue-detail";
+import { NewIssueRoute } from "@island/features/issue-create";
+import { TriageScreen } from "@island/features/triage";
 
 /** R-13: /team/:key → the team's default view. */
 function TeamDefaultRedirect() {
@@ -50,6 +53,9 @@ const ISSUE_VIEW_PATHS = new Set([
 
 function shellElement(path: string, screen: string): React.ReactElement {
   if (ISSUE_VIEW_PATHS.has(path)) return <IssueViewsScreen />;
+  if (path === "/issue/:identifier") return <IssuePage />;
+  if (path === "/team/:teamKey/new") return <NewIssueRoute />;
+  if (path === "/triage") return <TriageScreen />;
   return <ScreenPending screen={screen} />;
 }
 

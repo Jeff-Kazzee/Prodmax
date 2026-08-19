@@ -4,7 +4,7 @@
  * the SSE module lands). Presence/AI/inbox/new-issue are later modules.
  */
 import { Link, useLocation } from "react-router-dom";
-import { Monitor, Moon, Search, Sun } from "lucide-react";
+import { Monitor, Moon, Plus, Search, Sun } from "lucide-react";
 import { Button } from "@island/components/ui/button";
 import { Kbd } from "@island/components/ui/kbd";
 import {
@@ -112,6 +112,7 @@ export function Topbar() {
   const { pathname } = useLocation();
   const session = useSession();
   const crumbs = crumbsFor(pathname, session.activeWorkspace?.name ?? "Prodmax");
+  const { openNewIssue } = useShellState();
 
   return (
     <header
@@ -147,6 +148,21 @@ export function Topbar() {
         </ol>
       </nav>
       <SearchTrigger />
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="New issue"
+            data-key="c"
+            onClick={() => openNewIssue()}
+            className="size-9"
+          >
+            <Plus className="size-4" aria-hidden="true" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>New issue</TooltipContent>
+      </Tooltip>
       <div className="flex items-center gap-1">
         <SyncDot />
         <DensityToggle />

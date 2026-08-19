@@ -1,12 +1,10 @@
 /**
- * Mobile bottom nav (§3.6, <768): Home · Inbox · Docs · More.
- * The center New-issue button is omitted — it cannot be real until the
- * issues module ships (no placeholder controls). "More" opens a bottom
- * sheet with the remaining real surfaces + theme cycle. Targets ≥36px.
+ * Mobile bottom nav (§3.6, <768): Home · Inbox · New · Docs · More.
+ * "More" opens a bottom sheet with remaining surfaces + theme cycle.
  */
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { BookOpen, Home, Inbox, Menu, SunMoon } from "lucide-react";
+import { BookOpen, Home, Inbox, Menu, Plus, SunMoon } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -16,10 +14,12 @@ import {
 } from "@island/components/ui/dialog";
 import { MORE_NAV } from "./nav-items";
 import { nextTheme, useTheme } from "@/lib/theme";
+import { useShellState } from "./shell-state";
 
 export function BottomNav() {
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
+  const { openNewIssue } = useShellState();
   const [moreOpen, setMoreOpen] = useState(false);
 
   const items = [
@@ -30,7 +30,29 @@ export function BottomNav() {
 
   return (
     <nav aria-label="Primary" className="pmx-bottom-nav h-14 items-stretch">
-      {items.map((item) => (
+      {items.slice(0, 2).map((item) => (
+        <NavLink
+          key={item.id}
+          to={item.path}
+          end={item.path === "/"}
+          className={({ isActive }) =>
+            `flex min-w-14 flex-1 flex-col items-center justify-center gap-1 text-[10px] ${isActive ? "text-foreground" : "text-muted-foreground"}`
+          }
+        >
+          <item.icon className="size-5" aria-hidden="true" />
+          {item.label}
+        </NavLink>
+      ))}
+      <button
+        type="button"
+        className="flex min-w-14 flex-1 flex-col items-center justify-center gap-1 text-[10px] text-foreground"
+        aria-label="New issue"
+        onClick={() => openNewIssue()}
+      >
+        <Plus className="size-5" aria-hidden="true" />
+        New
+      </button>
+      {items.slice(2).map((item) => (
         <NavLink
           key={item.id}
           to={item.path}

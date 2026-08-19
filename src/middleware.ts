@@ -53,13 +53,33 @@ export const onRequest: MiddlewareHandler = (context, next) => {
   return next();
 };
 
-/** Origin header host must equal the request's own host. */
+/**
+ * Origin host must match the request host. Compare against the Host header
+ * first: Node/Astro often rebuilds `request.url` from the listen address
+ * (`127.0.0.1`) while the browser Origin is `localhost` (or the reverse).
+ * Loopback aliases on the same port are the same origin for CSRF.
+ */
 export function originMatches(request: Request, url: URL): boolean {
   const origin = request.headers.get("origin");
   if (!origin) return true; // same-origin non-browser/none → allow (cookie+no-Origin)
   try {
-    return new URL(origin).host === url.host;
+    const originHost = new URL(origin).host;
+    const headerHost = request.headers.get("host");
+    if (headerHost && hostsEquivalent(originHost, headerHost)) return true;
+    return hostsEquivalent(originHost, url.host);
   } catch {
     return false;
   }
+}
+
+function hostsEquivalent(a: string, b: string): boolean {
+  if (a === b) return true;
+  return canonicalizeLoopback(a) === canonicalizeLoopback(b);
+}
+
+function canonicalizeLoopback(host: string): string {
+  return host
+    .replace(/^127\.0\.0\.1(?=:\d+$|$)/, "localhost")
+    .replace(/^\[::1\](?=:\d+$|$)/, "localhost")
+    .replace(/^::1(?=:\d+$|$)/, "localhost");
 }

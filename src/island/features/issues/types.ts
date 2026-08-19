@@ -88,6 +88,7 @@ export interface TeamOption {
   id: string;
   key: string;
   name: string;
+  triageEnabled?: number;
 }
 
 export interface LookupMaps {

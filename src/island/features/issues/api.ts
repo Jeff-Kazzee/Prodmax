@@ -4,7 +4,7 @@
  */
 import { apiDelete, apiGet, apiPatch, apiPost } from "@island/app/api";
 import type { FilterNode } from "@/lib/validation/views";
-import type { IssueLayout, IssueListItem, LabelOption, MemberOption, SavedView, StateOption } from "./types";
+import type { IssueLayout, IssueListItem, LabelOption, MemberOption, SavedView, StateOption, TeamOption } from "./types";
 
 interface Page<T> {
   data: T[];
@@ -35,6 +35,10 @@ export function listIssues(params: {
   cursor?: string | null;
 }): Promise<Page<IssueListItem>> {
   return apiGet<Page<IssueListItem>>(issuesQuery(params));
+}
+
+export function listTeams(wsId: string): Promise<Page<TeamOption>> {
+  return apiGet(`/api/teams?wsId=${encodeURIComponent(wsId)}`);
 }
 
 export function patchIssue(

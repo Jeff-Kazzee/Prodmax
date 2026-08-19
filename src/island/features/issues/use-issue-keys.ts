@@ -2,6 +2,7 @@
 import { useEffect } from "react";
 import type { FilterNode } from "@/lib/validation/views";
 import { isTypingTarget } from "@/lib/keyboard/hotkeys";
+import { useShellState } from "@island/components/shell/shell-state";
 import { chipNodes, removeChip } from "./filter-ast";
 import { clearSelection, selectAll, type SelectionState } from "./selection";
 
@@ -14,6 +15,7 @@ export function useIssueViewKeys(opts: {
   onSaveAs: () => void;
 }): void {
   const { orderedIds, setSelection, setFilter, filter, onCycleLayout, onSaveAs } = opts;
+  const { createOpen, panelOpen } = useShellState();
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -46,6 +48,7 @@ export function useIssueViewKeys(opts: {
         return;
       }
       if (key === "escape") {
+        if (createOpen || panelOpen) return;
         setSelection(() => clearSelection());
         return;
       }
@@ -56,5 +59,5 @@ export function useIssueViewKeys(opts: {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [orderedIds, setSelection, setFilter, filter, onCycleLayout, onSaveAs]);
+  }, [orderedIds, setSelection, setFilter, filter, onCycleLayout, onSaveAs, createOpen, panelOpen]);
 }
