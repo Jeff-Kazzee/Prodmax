@@ -2,12 +2,11 @@
  * S-16 cycle screen. One component serves R-20 (`/cycle/current`) and R-21
  * (`/cycle/:id`). The route only decides whether a cycle id is supplied.
  *
- * The team lives in `?cycleTeam=`, not the `?team=` ux-spec §4.16 CY-01 names.
- * `IssueCreateHost` treats a bare `?team=` anywhere in the app as an intent to
- * create an issue and opens the modal over whatever screen you asked for, so
- * using the documented name here would pop a dialog on every team switch and
- * on every shared cycle link. T-033 fixes that upstream, and this reverts to
- * `?team=` in the same change.
+ * The team lives in `?team=` per ux-spec §4.16 CY-01, so the choice survives a
+ * reload and a share. That parameter briefly had to be renamed here, because
+ * `IssueCreateHost` treated any `?team=` as an intent to create an issue and
+ * popped a modal over the cycle. T-033 fixed the trigger, so the documented
+ * name is back.
  *
  * CY-04 asks for the S-08 board engine scoped to the cycle. That engine picks
  * its filter from the pathname, and `/cycle/current` carries no cycle id to
@@ -38,7 +37,7 @@ export function CycleScreen() {
   const session = useSession();
   const wsId = session.activeWorkspace?.id ?? null;
   const cycleId = id ?? null;
-  const state = useCycles(wsId, { cycleId, teamKey: params.get("cycleTeam") });
+  const state = useCycles(wsId, { cycleId, teamKey: params.get("team") });
   const { lookup } = useLookups(wsId);
   const [closeOpen, setCloseOpen] = useState(false);
 
@@ -139,11 +138,11 @@ export function CycleScreen() {
           // the param first would re-resolve the OLD cycle id against the NEW
           // team, which finds nothing and flashes "No active cycle".
           if (cycleId) {
-            navigate(`/cycle/current?cycleTeam=${encodeURIComponent(key)}`);
+            navigate(`/cycle/current?team=${encodeURIComponent(key)}`);
             return;
           }
           const next = new URLSearchParams(params);
-          next.set("cycleTeam", key);
+          next.set("team", key);
           setParams(next, { replace: true });
         }}
         onClose={() => setCloseOpen(true)}
@@ -194,7 +193,7 @@ export function CycleScreen() {
         }}
         onClosed={(nextCycleId) => {
           notifyIssuesChanged();
-          const team = state.team ? `?cycleTeam=${encodeURIComponent(state.team.key)}` : "";
+          const team = state.team ? `?team=${encodeURIComponent(state.team.key)}` : "";
           navigate(`/cycle/${nextCycleId}${team}`);
         }}
       />

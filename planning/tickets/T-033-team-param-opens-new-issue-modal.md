@@ -1,9 +1,10 @@
 # T-033 : `?team=` in the URL pops the new-issue modal on any screen
 
-status: open
+status: done
 module: M3 issues
 owns: src/island/features/issue-create/create-host.tsx, src/island/features/triage/triage-screen.tsx, src/island/features/cycles/**, tests/island/features/issue-create/**
 depends-on: none
+assignee: claude-opus-5 session 6858dcdc, 2026-08-19
 
 > Read `planning/tickets/README.md` first (shell rules, gates, anti-stall).
 
@@ -77,3 +78,49 @@ Triage is left on `?team=` because changing it is outside T-006's owns list, so
 
 No screen opens the create modal from URL state it did not ask for. All four
 gates green.
+
+## Work log
+
+Session `6858dcdc`, 2026-08-19. Branch `fix/t-033-team-param-modal`.
+
+```
+════ GATE VERDICT ════
+PASS build  complete
+PASS check  277 files, 0 errors
+PASS test   files: 52 passed (52) | tests: 259 passed (259)
+PASS e2e    9 passed (10.4s)
+ALL GATES PASS
+```
+
+### The decision
+
+Option 1, an explicit trigger. `IssueCreateHost` opens from the URL only when
+`?new` is present, and reads `title`, `priority` and `team` as prefill once
+something has asked. A prefill parameter is not a request to open anything.
+
+The R-15 route keeps working and is the documented shareable create link:
+ux-spec §2.2 names `/team/:teamKey/new?title=…&priority=…`, and it never
+mentions `?team=`, so the old trigger was reading a parameter the create flow
+was never given. `NewIssueRoute` now applies that prefill itself, through the
+same `urlPrefill` helper, because it previously arrived only by way of the
+effect this change narrowed.
+
+### Constraint amendment
+
+`src/island/features/issue-create/new-issue-route.tsx` is outside the `owns:`
+list. R-15 would have lost its documented prefill without it.
+
+### Falsification
+
+| Break | Failure |
+|---|---|
+| Restore the old trigger, opening on `team` or `title` | `expected <div role="dialog" …> to be null` on the triage test |
+
+The sensor is in the same file: an explicit `?new=1` still opens the modal with
+its prefill, so the triage assertion cannot pass against a host that simply
+never opens from a URL.
+
+### Cycles reverted
+
+`src/island/features/cycles/**` is back on `?team=` per ux-spec §4.16 CY-01.
+`grep -rn cycleTeam src tests` is empty.
