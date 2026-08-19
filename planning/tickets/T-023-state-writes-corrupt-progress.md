@@ -1,8 +1,8 @@
 # T-023 — workflow state writes corrupt project progress
 
-status: open
+status: in-review
 module: M1 data and API core
-assignee: —
+assignee: claude-code session 47ad9748, 2026-08-19
 owns: src/pages/api/states/[id]/index.ts, tests/api/states*.test.ts, planning/architecture.md §8
 depends-on: T-005 remediation phase 5 (needs `repairProjectProgress` to exist)
 
@@ -70,3 +70,160 @@ than noise to be suppressed.
 
 Both tests fail before and pass after. The source-tree gate from the T-005
 remediation reports zero violations. All four gates green.
+
+## Work log
+
+### 2026-08-19, branch `fix/t-023-state-writes-progress`
+
+**Files touched.** `src/pages/api/states/[id]/index.ts`,
+`tests/api/states-progress.test.ts` (new), `tests/api/projects-choke-point.test.ts`,
+`planning/architecture.md` §9.
+
+**Deliverable 2: which option.** Took the first one, the issue-write
+choke-point, not the repair-only fallback. The two are not equally acceptable
+here, because deliverable 2's fallback keeps the raw `db.update(issues)` alive
+and the Acceptance section requires the source-tree gate to report zero. Only
+routing through the writer satisfies both. The consumer then folds the whole run
+into one `UPDATE projects` per affected project, so the counters came out right
+without new counter code.
+
+**Per-row `w.write`, not `w.writeMany`.** The first draft used `writeMany` for
+the batch UPDATE. That is wrong here: `stateTimestamps` reads each issue's own
+`startedAt` and `completedAt`, so the patch is not uniform across the batch and
+`writeMany` cannot express it. See the parity note below.
+
+**`w.noteState(state)` is load-bearing.** The progress consumer resolves each
+transition's state category by id at flush time, and flush runs at the end of
+`runIssueWrite`, after the body has already deleted the state row. Without the
+memo, the resolver throws `State not found while resolving category` and DELETE
+returns 500. Falsified: removing that one line fails both DELETE tests.
+
+**History rows.** Added via `recordFieldChange` per issue, matching the
+`updateCycleScope` precedent in `cycles.ts`. The writer records transitions but
+not history, so history is the caller's job on this path. Two details.
+`recordFieldChange` suppresses inside `HISTORY_GRACE_MS`, so the test ages the
+seeded rows past the 3-minute window rather than asserting a row the production
+code is right to withhold. And history is written only for live issues, matching
+`updateIssue`, which reaches only live rows through `requireLiveIssue`. Trashed
+issues still get repointed, because the foreign key demands it, but they do not
+generate audit noise.
+
+**`cause` stayed `direct`.** A state deletion is arguably its own cause, but the
+`IssueWriteCause` union lives in `src/lib/services/issues-events.ts`, which is
+T-024's `owns:` file. Left alone per the §8 overlap rule. Worth folding into
+T-024 if that ticket touches the union anyway.
+
+**Two scope notes.**
+
+1. `tests/api/projects-choke-point.test.ts` is outside this ticket's `owns:`
+   list, but Acceptance requires the gate to report zero and that gate is a
+   hard-coded inventory. Deleted the `KNOWN_VIOLATIONS` entry and dropped the
+   total from 1 to 0, per that file's own rule that entries are deleted when a
+   ticket lands and never edited upward. The map is now empty.
+2. The `owns:` line says `planning/architecture.md §8` but deliverable 5 says
+   §9. Wrote §9: it is the counter-design section and row 3 is the incremental
+   counter design this rule qualifies. §8 was left untouched.
+
+**One test was too weak as first written.** "PATCH of name or color leaves the
+cache untouched" compared the cache before and after, which cannot fail.
+`repairProjectProgress` is idempotent, so an unnecessary repair rewrites the
+same numbers and the assertion passes anyway. Rewritten to degrade the cache to
+the legacy two-field shape first, so only a repair restores four fields and the
+surviving shape is the assertion. Falsified: disabling the `recategorized`
+guard now fails it with `expected { done: 4, total: 4, …(2) } to deeply equal
+{ done: 4, total: 4 }`.
+
+**Falsification of the two defect fixes** was the real pre-fix tree, not a
+synthetic break: the tests were written first and run against `dev`. PATCH
+failed with the cache stuck at `percent: 0, issuesDone: 0` after recategorizing
+to `completed`. DELETE failed with the cache stuck at `percent: 100,
+issuesDone: 2` after every issue moved out of `completed`, and the version test
+failed `expected 1 to be 2`.
+
+### Cross-model review round, four reviewers on the diff
+
+Run before the PR per the project's pstack routing. Three findings changed the
+code, and all three were things the first draft got wrong.
+
+**1. PATCH compared against a stale snapshot, reintroducing the defect.**
+`loadState` reads the state row, then `parseBodyOptional` suspends on
+`await request.text()`, and the `recategorized` guard then compared the body
+against that pre-await snapshot. Two concurrent PATCHes on the same state
+interleave at the suspension: the second resumes holding the old category, sees
+no change, and skips the repair the first one just made necessary. Result is a
+state reading `started` with counters saying `completed`, which is exactly the
+corruption this ticket exists to remove, reintroduced inside the optimization
+added to avoid needless repairs. Fixed by re-reading the state row inside the
+transaction and computing `recategorized` from the fresh value. Reasoned, not
+test-covered: the suite is single-threaded and this is a genuine interleaving,
+so no test here proves it.
+
+**2. The reassignment was a counter-grade write but not a state-grade one.**
+`updateIssue` does four things on a state change: `noteState`,
+`recordFieldChange`, `stateTimestamps`, and `downgradeBlockersIfResolved`. The
+first draft did the first two. So an issue leaving a `completed` state kept its
+`completedAt`, landing as an unstarted issue carrying a completion date, and an
+issue landing in a `completed` fallback never downgraded its blocks (FM-016).
+Nothing self-heals those columns any more than it heals the counters. Fixed by
+switching to per-row `w.write` with the timestamp patch and the blocker
+downgrade, both guarded to live issues to match `updateIssue`.
+
+**3. Deliverable 3 had no test.** The transaction was the diff's own binding
+claim, restated in architecture §9, and deleting the wrapper left every test
+green. Now covered both ways by a SQLite trigger that aborts any `projects`
+UPDATE, which makes the repair fail on the real production path with no mocking
+and no test-only seam. `withIssueConsumers` cannot serve here: it refuses async
+callbacks by design and every route handler is async, which is why
+`projects-rollback.test.ts` drives services rather than handlers.
+
+**The same weak-assertion mistake, twice.** Worth recording because the second
+one was mine after being warned about the first. Asserting the reassignment
+clears `completedAt` passed with the `stateTimestamps` spread deleted, because
+`createIssue` never sets `completedAt`, so the column was already null and
+`toBeNull()` proved nothing. The test now seeds a non-null `completedAt` first.
+Falsified after the fix: removing the spread fails with
+`expected 1787167479657 to be null`.
+
+**Other assertions strengthened after the review.** The DELETE trace test
+asserted `state_id` was merely not the deleted state, which every sibling
+satisfies, and asserted a history row count above zero, which passes with the
+old and new values reversed or a wrong actor. Now asserts the fallback equals
+the team default, exactly one history row, both values parsed and compared, and
+the actor. The PATCH test gained a trashed issue and a project-less issue in the
+same state, so the two filters in `projectsHoldingIssuesIn` are load-bearing.
+
+**Falsifications run this round.** Disabling the `recategorized` guard fails the
+rename test. Removing `w.noteState(state)` fails both DELETE tests with
+`State not found while resolving category`. Removing the `stateTimestamps`
+spread fails the trace test. Replacing the PATCH transaction with a plain IIFE
+fails the rollback test with `expected 'completed' to be 'started'`.
+
+**Response shape.** DELETE now returns `{ok, reassigned, fallbackStateId}`.
+Nothing else tells a client that deleting a state moved n issues or where they
+went, and there is no undo token because the state row is gone.
+
+**Triage branch, preserved and not fixed.** Two reviewers independently found
+that repointing `triageStateId` also clobbers the issue fallback, so issues land
+on the new triage state rather than the team default, and that when only triage
+pointed at the deleted state the `.find` compares against `undefined` and
+discards a perfectly valid default. Both are pre-existing and unreachable:
+nothing in `src/` writes `triageStateId`. Preserved verbatim with a comment
+saying so, because changing behavior in unreachable code is a change no test can
+justify.
+
+**Filed, not fixed.** [T-025](T-025-seed-writes-stale-progress-caches.md), the
+seed hand-writes both project caches in the legacy two-field shape, verified at
+`scripts/seed.ts:240` and `:260`, and `repairAllProjects` has no callers.
+[T-026](T-026-harden-the-counter-write-gate.md), the choke-point gate catches
+two write shapes out of fifteen probed, never scans `scripts/`, and does not
+watch `states.category` at all, which is the exact class this ticket fixes. The
+zero this ticket earned is real for raw `issues` writes in `src/` and proves
+less than the Acceptance section implies.
+
+**Known limit, not fixed.** DELETE now runs one UPDATE and one SELECT per issue
+rather than one batched pair, plus one history INSERT per live issue, all inside
+a single write transaction. PATCH runs one full aggregate per affected project.
+Both are linear and unbatched. Left that way deliberately: a workflow state
+holding tens of thousands of issues is not a shape this product has, the repo has
+no chunking precedent to follow, and adding one would be a loop no test can
+justify.
