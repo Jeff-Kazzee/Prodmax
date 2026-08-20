@@ -103,3 +103,27 @@ describe("T-007 does not create issues", () => {
     expect(rawWrites(source, "issues")).toBe(0);
   });
 });
+
+describe("the block type list has one source of truth", () => {
+  /**
+   * The 19 names live twice: in BLOCK_SPECS here, and in the CHECK constraint
+   * on the blocks table in src/db/schema.ts, which this ticket does not own.
+   * Nothing makes them agree, so a type added to one and not the other fails
+   * at INSERT time in production rather than at build time. This pins them.
+   */
+  it("BLOCK_SPECS matches the blocks table CHECK constraint", async () => {
+    const { createApiDb, teardownApiDb } = await import("./helpers");
+    const { BLOCK_TYPES } = await import("@/lib/validation/blocks");
+    const sqlite = createApiDb();
+    try {
+      const ddl = (
+        sqlite.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='blocks'").get() as { sql: string }
+      ).sql;
+      const inCheck = [...ddl.matchAll(/'([a-z_0-9]+)'/g)].map((m) => m[1]);
+      expect(new Set(inCheck)).toEqual(new Set(BLOCK_TYPES));
+      expect(BLOCK_TYPES).toHaveLength(19);
+    } finally {
+      teardownApiDb();
+    }
+  });
+});

@@ -5,8 +5,7 @@
  * `loadPageChunk` crawl with a single ordered SELECT over the
  * (page_id, parent_id, position) index; the client builds the tree. So
  * `listPageBlocks` issues exactly one statement over `blocks`, and
- * tests/api/blocks-query-count pins that with a statement counter rather than
- * with a comment.
+ * tests/api/blocks pins that with a statement counter rather than a comment.
  *
  * Every write goes through ./blocks-write, which is the only module that
  * touches the table. The four write endpoints are all expressed as batches of

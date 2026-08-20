@@ -14,8 +14,8 @@
  * search index disagreeing with the document.
  *
  * The 19 names are also a CHECK constraint on the blocks table in
- * src/db/schema.ts, which this ticket does not own. tests/api/blocks-spec
- * pins the two lists to each other.
+ * src/db/schema.ts, which this ticket does not own.
+ * tests/api/blocks-choke-point pins the two lists to each other.
  */
 import { z } from "zod";
 import { HttpError } from "@/lib/api/errors";

@@ -3,8 +3,8 @@
  *
  * GET is the §9 page open and must stay at exactly ONE statement over the
  * blocks table. The guards above it read `workspaces`, `workspace_members`
- * and `pages`, never `blocks`, so tests/api/blocks-query-count can count
- * statements by table name without a denylist.
+ * and `pages`, never `blocks`, so tests/api/blocks can count statements by
+ * table name without a denylist.
  */
 import { json, route } from "@/lib/api/errors";
 import { parseBody } from "@/lib/api/parse";

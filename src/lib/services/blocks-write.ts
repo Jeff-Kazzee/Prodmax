@@ -10,9 +10,10 @@
  * Two branded types make that structural rather than conventional:
  *   SanitizedBlock  (validation/blocks) cannot be built without sanitizing
  *   Placement       cannot be built without passing the nest rule
- * `writeBlockRow` takes both, so a caller holding raw client input has nothing
- * it can pass. tests/api/blocks-choke-point covers the remaining hole, which
- * is a caller that skips this module and writes the table directly.
+ * `insertBlockRow` and `updateBlockRow` take both, so a caller holding raw
+ * client input has nothing it can pass. tests/api/blocks-choke-point covers
+ * the remaining hole: a caller that skips this module and writes the table
+ * directly.
  *
  * The FTS body needs no hook here. src/db/fts.sql maintains the page's index
  * row from `UPDATE OF text, page_id, workspace_id, deleted_at ON blocks`, so
@@ -59,7 +60,7 @@ export function toBlockDto(row: BlockRow): BlockDto {
     id: row.id,
     pageId: row.pageId,
     parentId: row.parentId,
-    type: (isBlockType(row.type) ? row.type : "paragraph") as BlockType,
+    type: isBlockType(row.type) ? row.type : "paragraph",
     props,
     position: row.position,
     text: row.text,
@@ -111,7 +112,7 @@ export function siblingViewOf(rows: readonly BlockRow[]): SiblingView {
     byId.set(r.id, {
       id: r.id,
       parentId: r.parentId,
-      type: (isBlockType(r.type) ? r.type : "paragraph") as BlockType,
+      type: isBlockType(r.type) ? r.type : "paragraph",
       position: r.position,
     });
   }
