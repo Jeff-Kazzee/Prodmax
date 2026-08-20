@@ -1,6 +1,6 @@
 # T-007 — M5a Docs API (pages/blocks/templates/search)
 
-status: in-review
+status: done
 module: M5 docs engine
 assignee: claude-code session 2026-08-19 (feat/t-007-docs-api)
 owns: src/pages/api/pages/**, src/pages/api/blocks/**, src/pages/api/templates/**, src/pages/api/search/**, src/lib/services/{pages,blocks,templates,search}*, src/lib/validation/{pages,blocks}*, tests/api/{pages,blocks,search}*

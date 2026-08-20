@@ -76,7 +76,7 @@ at ≤6 logins.
 | T-004 | M3c Issue panel + new-issue modal + triage | done |
 | T-005 | M4a Projects/cycles API | done |
 | T-006 | M4b Projects/cycles UI | done |
-| T-007 | M5a Docs API (pages/blocks/templates/search) | open |
+| T-007 | M5a Docs API (pages/blocks/templates/search) | done |
 | T-008 | M5b Docs home + page tree + trash | open |
 | T-009 | M5c Block editor core | open |
 | T-010 | M5d Templates + embedded issue views | open |
