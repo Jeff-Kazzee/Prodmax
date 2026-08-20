@@ -1,10 +1,10 @@
 # T-034 : seeded blocks do not match the §2.6 props contract
 
-status: open
+status: done
 module: M0 foundation / M1 data
 owns: scripts/seed.ts, tests/db/seed.test.ts
 depends-on: none
-assignee: none
+assignee: claude-code session 2026-08-19 (fix/t-034-seed-block-props)
 
 > Read `planning/tickets/README.md` first (shell rules, gates, anti-stall).
 
@@ -90,4 +90,67 @@ Every row has content in `text` and no `text` key in `props`.
 
 ## Work log
 
-(empty)
+Session 2026-08-19, branch `fix/t-034-seed-block-props`, cut from `dev` at
+`606b77f`.
+
+```
+════ GATE VERDICT ════
+PASS build  complete
+PASS check  314 files, 0 errors
+PASS test   files: 64 passed (64) | tests: 410 passed (410)
+PASS e2e    9 passed (10.1s)
+ALL GATES PASS
+```
+
+Exit code 0, counts parsed. `dev` was 406 tests, so this adds 4.
+
+### One correction to this ticket's own premise
+
+The ticket said the seed "cannot import from `@/`" and proposed either
+duplicating the extractor or moving it to a plain-JS module. Only the first
+half is true. `scripts/seed.ts` already imports `../src/db/positions.ts` and
+`../src/db/fts.ts` by relative path; it is the `@/` alias specifically that
+node cannot resolve. `src/lib/validation/blocks-richtext.ts` imports nothing
+but zod, so the seed now imports `richTextToPlain` from it directly.
+
+That removes the duplication the ticket was prepared to accept. There is one
+extractor, not two pinned to each other.
+
+### What changed
+
+Every seeded block now carries its content in `props` per section 2.6, and the
+`text` column is derived from those props rather than hand-written:
+
+- `callout` is `{emoji, text}`; `style` is gone, it was never in the contract.
+- `code` is `{code, language, wrap}`.
+- `todo` is `{checked, text}`.
+- Text-bearing types carry `props.text` as a `richText[]` run.
+- `issue_view` is `{viewId, layout}` pointing at the seeded "Urgent & high"
+  view. It carried `{issueId, display}`, which no consumer reads, so the demo
+  bench's one embed block could not render as ED-09 specifies.
+
+View ids are allocated ahead of the pages section so the block can reference a
+real view; the views insert below consumes the same ids.
+
+### Falsification
+
+| Mutation | Failure |
+|---|---|
+| callout reverts to `{style, emoji}` | `expected [ Array(1) ] to deeply equal []` |
+| `text` hand-written instead of derived | `expected [ …(24) ] to deeply equal []` |
+| `issue_view` points at an issue again | `expected '01a01d5e-…' to be undefined` |
+| every block text emptied | `expected [ …(23) ] to deeply equal []` |
+
+The last one exists because the derive-check loop is satisfied by a seed that
+writes `""` everywhere, so the test also asserts more than 15 blocks carry
+non-empty text.
+
+The props test parses each row against the shipped `BLOCK_SPECS` rather than
+against a transcribed copy, so the assertion is the contract itself and cannot
+drift from it.
+
+### Not done
+
+`scripts/seed.ts` remains raw SQL rather than going through the service layer,
+per the reasoning recorded in architecture section 9. The new props are
+therefore validated by the test rather than by the write path.

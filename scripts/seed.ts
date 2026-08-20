@@ -25,6 +25,7 @@ import {
 } from "../src/db/ids.ts";
 import { rebalanceKeys } from "../src/db/positions.ts";
 import { reindexFts } from "../src/db/fts.ts";
+import { richTextToPlain, type RichTextNode } from "../src/lib/validation/blocks-richtext.ts";
 
 type Sqlite = Database.Database;
 
@@ -428,6 +429,11 @@ export function seedDemo(sqlite: Sqlite): SeedCounts {
   });
   seedIssues();
 
+  /* View ids are allocated up here, ahead of the views insert below, because
+     the Product Home page carries an issue_view block and section 2.6 types
+     its props as {viewId}: an embedded saved view, not an issue. */
+  const viewIds = { myOpen: id(), paymentsBoard: id(), urgent: id() } as const;
+
   /* ------------------------------------------------- pages and blocks */
   const pages = { handbook: id(), devEnv: id(), codeReview: id(), productHome: id() } as const;
   type PageKey = keyof typeof pages;
@@ -467,38 +473,65 @@ export function seedDemo(sqlite: Sqlite): SeedCounts {
     });
   }
 
+  /**
+   * Blocks carry their content in `props`, per the section 2.6 contract, and
+   * the `text` column is DERIVED from it below rather than hand-written.
+   *
+   * The seed used to do the opposite: content lived in `text` and `props` held
+   * a different shape per type (callout {style, emoji}, code {language}, todo
+   * {checked}, issue_view {issueId, display}). Section 2.6 defines `text` as
+   * "extracted plain text of the block", a mirror of props rather than the
+   * source, so every spec-conformant reader found seeded pages empty. T-034.
+   */
   interface BlockSeed {
     page: keyof typeof pages;
     type: string;
-    text: string;
-    props?: Record<string, unknown>;
+    props: Record<string, unknown>;
   }
+
+  /** A plain richText run, the shape section 2.6 gives every text-bearing type. */
+  const t = (text: string): RichTextNode[] => [{ type: "text", text }];
+
   const blockSeeds: BlockSeed[] = [
-    { page: "handbook", type: "heading_1", text: "Engineering Handbook" },
-    { page: "handbook", type: "paragraph", text: "How Acme Workshop builds Product: small teams, short cycles, docs beside issues." },
-    { page: "handbook", type: "heading_2", text: "How we build" },
-    { page: "handbook", type: "bulleted_list", text: "Plan before code; validate before merge." },
-    { page: "handbook", type: "bulleted_list", text: "Every change ships behind a flag until the demo bench passes." },
-    { page: "handbook", type: "callout", text: "Deploy any day of the week — rollbacks are rehearsed, not hoped for.", props: { style: "info", emoji: "💡" } },
-    { page: "handbook", type: "code", text: "npm ci\nnpm run db:migrate && npm run seed\nnpm run check && npm test", props: { language: "bash" } },
-    { page: "handbook", type: "todo", text: "Read the Development Environment guide", props: { checked: true } },
-    { page: "handbook", type: "todo", text: "Pair once with the on-call triage rotation", props: { checked: false } },
-    { page: "devEnv", type: "heading_2", text: "Setup" },
-    { page: "devEnv", type: "paragraph", text: "Node 24, SQLite via better-sqlite3, no external services required." },
-    { page: "devEnv", type: "code", text: "npm run dev\n# http://localhost:4321 — log in as demo@prodmax.dev", props: { language: "bash" } },
-    { page: "devEnv", type: "todo", text: "Run the full test suite once", props: { checked: true } },
-    { page: "devEnv", type: "callout", text: "Never edit data/prodmax.db while the dev server is running — reseed instead.", props: { style: "warning", emoji: "⚠️" } },
-    { page: "codeReview", type: "heading_2", text: "Review checklist" },
-    { page: "codeReview", type: "paragraph", text: "Reviews answer two questions: is it correct, and will the next reader understand it?" },
-    { page: "codeReview", type: "todo", text: "Tests cover the failure mode named in the issue", props: { checked: false } },
-    { page: "codeReview", type: "todo", text: "No workspace-scoped query bypasses the scope guard", props: { checked: false } },
-    { page: "codeReview", type: "todo", text: "Migrations are additive and reversible", props: { checked: true } },
-    { page: "codeReview", type: "code", text: "SELECT count(*) FROM issues WHERE workspace_id = ? -- always", props: { language: "sql" } },
-    { page: "productHome", type: "heading_1", text: "Product Home" },
-    { page: "productHome", type: "paragraph", text: "One page that points at everything the team is watching this cycle." },
-    { page: "productHome", type: "issue_view", text: "PRO-1 Payment latency spike on checkout", props: { issueId: issueIds[0], display: "card" } },
-    { page: "productHome", type: "callout", text: "This incident is the demo-bench search target: press Cmd+K and type \"payment\".", props: { style: "info", emoji: "🎯" } },
+    { page: "handbook", type: "heading_1", props: { text: t("Engineering Handbook") } },
+    { page: "handbook", type: "paragraph", props: { text: t("How Acme Workshop builds Product: small teams, short cycles, docs beside issues.") } },
+    { page: "handbook", type: "heading_2", props: { text: t("How we build") } },
+    { page: "handbook", type: "bulleted_list", props: { text: t("Plan before code; validate before merge.") } },
+    { page: "handbook", type: "bulleted_list", props: { text: t("Every change ships behind a flag until the demo bench passes.") } },
+    { page: "handbook", type: "callout", props: { emoji: "💡", text: t("Deploy any day of the week. Rollbacks are rehearsed, not hoped for.") } },
+    { page: "handbook", type: "code", props: { code: "npm ci\nnpm run db:migrate && npm run seed\nnpm run check && npm test", language: "bash", wrap: false } },
+    { page: "handbook", type: "todo", props: { checked: true, text: t("Read the Development Environment guide") } },
+    { page: "handbook", type: "todo", props: { checked: false, text: t("Pair once with the on-call triage rotation") } },
+    { page: "devEnv", type: "heading_2", props: { text: t("Setup") } },
+    { page: "devEnv", type: "paragraph", props: { text: t("Node 24, SQLite via better-sqlite3, no external services required.") } },
+    { page: "devEnv", type: "code", props: { code: "npm run dev\n# http://localhost:4321, log in as demo@prodmax.dev", language: "bash", wrap: false } },
+    { page: "devEnv", type: "todo", props: { checked: true, text: t("Run the full test suite once") } },
+    { page: "devEnv", type: "callout", props: { emoji: "⚠️", text: t("Never edit data/prodmax.db while the dev server is running. Reseed instead.") } },
+    { page: "codeReview", type: "heading_2", props: { text: t("Review checklist") } },
+    { page: "codeReview", type: "paragraph", props: { text: t("Reviews answer two questions: is it correct, and will the next reader understand it?") } },
+    { page: "codeReview", type: "todo", props: { checked: false, text: t("Tests cover the failure mode named in the issue") } },
+    { page: "codeReview", type: "todo", props: { checked: false, text: t("No workspace-scoped query bypasses the scope guard") } },
+    { page: "codeReview", type: "todo", props: { checked: true, text: t("Migrations are additive and reversible") } },
+    { page: "codeReview", type: "code", props: { code: "SELECT count(*) FROM issues WHERE workspace_id = ? -- always", language: "sql", wrap: false } },
+    { page: "productHome", type: "heading_1", props: { text: t("Product Home") } },
+    { page: "productHome", type: "paragraph", props: { text: t("One page that points at everything the team is watching this cycle.") } },
+    // Section 2.6 and ux-spec ED-09 both make issue_view an embedded saved
+    // VIEW. It used to carry {issueId, display}, which no consumer looks for.
+    { page: "productHome", type: "issue_view", props: { viewId: viewIds.urgent, layout: "list" } },
+    { page: "productHome", type: "callout", props: { emoji: "🎯", text: t('This incident is the demo-bench search target: press Cmd+K and type "payment".') } },
   ];
+
+  /**
+   * The plain text of a block's props, using the same extractor the service
+   * layer uses (src/lib/validation/blocks-richtext.ts). Importing it rather
+   * than copying it is what stops the seed drifting from the contract again.
+   */
+  function blockText(seed: BlockSeed): string {
+    if (seed.type === "code") return String(seed.props.code ?? "");
+    const run = seed.props.text;
+    return Array.isArray(run) ? richTextToPlain(run as RichTextNode[]) : "";
+  }
+
   const blocksPerPage = new Map<string, number>();
   for (const b of blockSeeds) {
     const n = (blocksPerPage.get(b.page) ?? 0) + 1;
@@ -509,9 +542,9 @@ export function seedDemo(sqlite: Sqlite): SeedCounts {
       page_id: pages[b.page],
       parent_id: null,
       type: b.type,
-      props: JSON.stringify(b.props ?? {}),
+      props: JSON.stringify(b.props),
       position: rebalanceKeys(n)[n - 1],
-      text: b.text,
+      text: blockText(b),
       version: 1,
       deleted_at: null,
       created_by: users.demo.id,
@@ -557,9 +590,10 @@ export function seedDemo(sqlite: Sqlite): SeedCounts {
     },
   ];
   const viewPos = rebalanceKeys(viewRows.length);
+  const viewIdOrder = [viewIds.myOpen, viewIds.paymentsBoard, viewIds.urgent];
   viewRows.forEach((v, i) => {
     insert(sqlite, "views", {
-      id: id(),
+      id: viewIdOrder[i],
       workspace_id: wsId,
       owner_id: users.demo.id,
       scope: v.scope,

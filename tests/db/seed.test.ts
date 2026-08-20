@@ -116,3 +116,81 @@ describe("demo-bench seed (ux-spec §12)", () => {
     expect(one(sqlite, "SELECT count(*) AS n FROM activity_events")).toBe(8);
   });
 });
+
+describe("seeded blocks obey the §2.6 props contract (T-034)", () => {
+  /**
+   * The seed used to put block content in the `text` column and a
+   * per-type-invented shape in `props`, so every spec-conformant reader found
+   * the demo pages empty. Parsing each row against the real schemas is what
+   * stops that drifting back: the assertion is the contract itself, not a
+   * transcription of it.
+   */
+  it("every block's props parse against the shipped per-type schema", async () => {
+    const { BLOCK_SPECS, isBlockType } = await import("@/lib/validation/blocks");
+    const sqlite = seed();
+    const rows = sqlite.prepare("SELECT id, type, props FROM blocks").all() as Array<{
+      id: string;
+      type: string;
+      props: string;
+    }>;
+    expect(rows.length).toBeGreaterThan(20);
+
+    const failures: string[] = [];
+    for (const row of rows) {
+      if (!isBlockType(row.type)) {
+        failures.push(`${row.id}: unknown type ${row.type}`);
+        continue;
+      }
+      const parsed = BLOCK_SPECS[row.type].props.safeParse(JSON.parse(row.props));
+      if (!parsed.success) {
+        failures.push(`${row.id} (${row.type}): ${parsed.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`);
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  it("derives the text column from props with the service's own extractor", async () => {
+    const { richTextToPlain } = await import("@/lib/validation/blocks-richtext");
+    const sqlite = seed();
+    const rows = sqlite.prepare("SELECT id, type, props, text FROM blocks").all() as Array<{
+      id: string;
+      type: string;
+      props: string;
+      text: string;
+    }>;
+
+    const mismatched: string[] = [];
+    for (const row of rows) {
+      const props = JSON.parse(row.props) as { text?: unknown; code?: unknown };
+      const expected =
+        row.type === "code"
+          ? String(props.code ?? "")
+          : Array.isArray(props.text)
+            ? richTextToPlain(props.text as Parameters<typeof richTextToPlain>[0])
+            : "";
+      if (row.text !== expected) mismatched.push(`${row.id} (${row.type}): ${JSON.stringify(row.text)} != ${JSON.stringify(expected)}`);
+    }
+    expect(mismatched).toEqual([]);
+    // A seed that wrote "" everywhere would satisfy the loop above.
+    expect(rows.filter((r) => r.text.length > 0).length).toBeGreaterThan(15);
+  });
+
+  it("points the issue_view block at a real saved view, not an issue", () => {
+    const sqlite = seed();
+    const row = sqlite.prepare("SELECT props FROM blocks WHERE type = 'issue_view'").get() as { props: string };
+    const props = JSON.parse(row.props) as { viewId?: string; issueId?: string };
+    // ED-09 embeds a saved view. The old seed carried {issueId}, which no
+    // consumer reads, so the one embed on the demo bench could not render.
+    expect(props.issueId).toBeUndefined();
+    expect(typeof props.viewId).toBe("string");
+    expect((sqlite.prepare("SELECT count(*) AS n FROM views WHERE id = ?").get(props.viewId) as { n: number }).n).toBe(1);
+  });
+
+  it("keeps the page's FTS body findable through the block text", () => {
+    const sqlite = seed();
+    const wsId = (sqlite.prepare("SELECT id FROM workspaces LIMIT 1").get() as { id: string }).id;
+    // A word that exists only inside a block, never in a page title.
+    const hits = searchWorkspace(sqlite, { workspaceId: wsId, query: "rollbacks", entityTypes: ["page"] });
+    expect(hits.length).toBeGreaterThan(0);
+  });
+});
