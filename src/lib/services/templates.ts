@@ -22,7 +22,7 @@
  * resolved either way.
  */
 import { and, asc, eq } from "drizzle-orm";
-import { templates } from "@/db/schema";
+import { teams, templates } from "@/db/schema";
 import { uuid7 } from "@/db/ids";
 import { generateKeyBetween } from "@/db/positions";
 import { currentDb } from "@/lib/api/db";
@@ -49,6 +49,7 @@ import {
   siblingViewOf,
   toBlockDto,
   type BlockDto,
+  type SiblingView,
 } from "./blocks-write";
 
 type TemplateRow = typeof templates.$inferSelect;
@@ -60,6 +61,7 @@ export interface TemplateDto {
   description: string | null;
   teamId: string | null;
   data: unknown;
+  recurrence: unknown;
   position: string;
   usageCount: number;
   createdBy: string;
@@ -81,6 +83,7 @@ function toTemplateDto(row: TemplateRow): TemplateDto {
     description: row.description,
     teamId: row.teamId,
     data,
+    recurrence: row.recurrence === null ? null : (JSON.parse(row.recurrence) as unknown),
     position: row.position,
     usageCount: row.usageCount,
     createdBy: row.createdBy,
@@ -145,7 +148,21 @@ function nextPosition(ctx: DocsCtx): string {
   return generateKeyBetween(last, null);
 }
 
+/** A team-scoped template must name a team of this workspace (section 7). */
+function assertTeamInWorkspace(ctx: DocsCtx, teamId: string | null | undefined): void {
+  if (!teamId) return;
+  const row = currentDb()
+    .select({ id: teams.id })
+    .from(teams)
+    .where(and(eq(teams.workspaceId, ctx.wsId), eq(teams.id, teamId)))
+    .get();
+  if (row === undefined) {
+    throw new HttpError("VALIDATION", "teamId must be a team in this workspace", [`teamId: ${teamId}`]);
+  }
+}
+
 export function createTemplate(ctx: DocsCtx, input: CreateTemplateInput): TemplateDto {
+  assertTeamInWorkspace(ctx, input.teamId);
   const id = uuid7();
   const now = Date.now();
   currentDb()
@@ -159,7 +176,7 @@ export function createTemplate(ctx: DocsCtx, input: CreateTemplateInput): Templa
       description: input.description ?? null,
       data: encodeData(input.kind, input.data),
       position: input.position ?? nextPosition(ctx),
-      recurrence: null,
+      recurrence: input.recurrence === undefined || input.recurrence === null ? null : JSON.stringify(input.recurrence),
       usageCount: 0,
       createdBy: ctx.userId,
       createdAt: now,
@@ -171,12 +188,16 @@ export function createTemplate(ctx: DocsCtx, input: CreateTemplateInput): Templa
 
 export function patchTemplate(ctx: DocsCtx, id: string, input: PatchTemplateInput): TemplateDto {
   const row = requireTemplate(ctx, id);
+  assertTeamInWorkspace(ctx, input.teamId);
   const patch: Partial<typeof templates.$inferInsert> = { updatedAt: Date.now() };
   if (input.name !== undefined) patch.name = input.name;
   if (input.description !== undefined) patch.description = input.description;
   if (input.teamId !== undefined) patch.teamId = input.teamId;
   if (input.position !== undefined) patch.position = input.position;
   if (input.data !== undefined) patch.data = encodeData(row.kind as "issue" | "page", input.data);
+  if (input.recurrence !== undefined) {
+    patch.recurrence = input.recurrence === null ? null : JSON.stringify(input.recurrence);
+  }
   currentDb().update(templates).set(patch).where(eq(templates.id, row.id)).run();
   return toTemplateDto(requireTemplate(ctx, id));
 }
@@ -226,7 +247,8 @@ export function instantiateTemplate(
   const mentions = workspaceMentions(ctx);
   const now = Date.now();
   currentDb().transaction(() => {
-    cloneNodes(ctx, page.id, data.blocks, null, mentions, now);
+    // One read of the page, not one per cloned node.
+    cloneNodes(ctx, page.id, data.blocks, null, mentions, now, siblingViewOf(readPageBlockRows(ctx, page.id)));
     bumpUsage();
   });
 
@@ -248,18 +270,24 @@ function cloneNodes(
   parentId: string | null,
   mentions: ReturnType<typeof workspaceMentions>,
   now: number,
+  /** Built once by the caller and kept current as rows are inserted. */
+  view: SiblingView,
 ): void {
   let afterId: string | null = null;
   for (const [i, node] of nodes.entries()) {
     const at = `blocks[${i}]`;
     const block = sanitizeBlock({ type: node.type, props: node.props }, mentions, at);
-    const view = siblingViewOf(readPageBlockRows(ctx, pageId));
     const placement = resolvePlacement(view, { parentId, afterId }, undefined, at);
     const id = uuid7();
-    insertBlockRow(ctx, pageId, id, block, placement, now);
+    const created = insertBlockRow(ctx, pageId, id, block, placement, now);
+    view.byId.set(id, { id, parentId: created.parentId, type: block.type, position: created.position });
+    for (const r of placement.rebalance) {
+      const seen = view.byId.get(r.id);
+      if (seen) seen.position = r.position;
+    }
     afterId = id;
     if (node.children && node.children.length > 0) {
-      cloneNodes(ctx, pageId, node.children, id, mentions, now);
+      cloneNodes(ctx, pageId, node.children, id, mentions, now, view);
     }
   }
 }

@@ -7,7 +7,7 @@
  */
 import { json, route } from "@/lib/api/errors";
 import { parseBodyOptional } from "@/lib/api/parse";
-import { requireWsId } from "@/lib/services/issues-helpers";
+import { expectedVersionOf, requireWsId } from "@/lib/services/issues-helpers";
 import { patchPageSchema } from "@/lib/validation/pages";
 import { requireDocs } from "@/lib/services/pages-access";
 import { getPage, patchPage } from "@/lib/services/pages";
@@ -25,7 +25,7 @@ export const PATCH = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
   const docs = requireDocs(ctx.request, wsId);
   const body = await parseBodyOptional(ctx.request, patchPageSchema);
-  return json({ page: patchPage(docs, ctx.params.id as string, body) });
+  return json({ page: patchPage(docs, ctx.params.id as string, body, expectedVersionOf(ctx.request)) });
 });
 
 export const DELETE = route(async (ctx: Ctx) => {

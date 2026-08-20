@@ -50,15 +50,29 @@ function withoutComments(source: string): string {
 }
 
 /**
- * Two shapes reach a table: the Drizzle builder, and raw SQL through `run`.
- * Matching only the builder would let `` db.run(sql`UPDATE blocks ...`) ``
- * past, and that shape already exists in this tree for `pages`.
+ * Every shape that reaches a table, not just the two obvious ones.
+ *
+ * The first version matched `.update(blocks)` and a bare `UPDATE blocks`, and
+ * missed eleven of sixteen real shapes. A reviewer added a genuine, effective
+ * block write to another module using drizzle's own table interpolation, and
+ * every gate here stayed green while the write landed. WRITE_SHAPES at the
+ * bottom of this file is the fixture that pins the detector itself.
+ *
+ * Covered: the builder with a bare, namespaced or spaced table; raw SQL with
+ * the table bare, quoted, schema-qualified or drizzle-interpolated; and the
+ * INSERT OR REPLACE / REPLACE INTO / UPDATE OR IGNORE spellings.
  */
-function rawWrites(input: string, table: string): number {
+export function rawWrites(input: string, table: string): number {
   const source = withoutComments(input);
-  const builder = source.match(new RegExp(`\\.(update|insert|delete)\\(\\s*${table}\\s*\\)`, "g"))?.length ?? 0;
-  const raw = source.match(new RegExp(`(update|insert\\s+into|delete\\s+from)\\s+${table}`, "gi"))?.length ?? 0;
-  return builder + raw;
+  // Optional `${` from a drizzle sql template, optional `schema.` namespace,
+  // optional quoting. The trailing boundary keeps `blocks_audit` out.
+  const named = String.raw`(?:\$\{\s*)?(?:\w+\.)?["'\`]?` + table + String.raw`["'\`]?\b`;
+  const builder = new RegExp(String.raw`\.(?:update|insert|delete)\(\s*` + named, "gi");
+  const rawSql = new RegExp(
+    String.raw`(?:insert(?:\s+or\s+\w+)?\s+into|replace\s+into|update(?:\s+or\s+\w+)?|delete\s+from)\s+` + named,
+    "gi",
+  );
+  return (source.match(builder)?.length ?? 0) + (source.match(rawSql)?.length ?? 0);
 }
 
 function inventory(table: string, allowed: readonly string[]): Record<string, number> {
@@ -125,5 +139,42 @@ describe("the block type list has one source of truth", () => {
     } finally {
       teardownApiDb();
     }
+  });
+});
+
+describe("the write detector sees every shape a write can take", () => {
+  /**
+   * Each entry is a real way to write the blocks table in this codebase's
+   * idiom. A detector that misses one is a gate that can be walked around,
+   * which is what happened: the drizzle-interpolation row below was a live,
+   * undetected write from a second module.
+   */
+  const WRITE_SHAPES: Array<[string, string]> = [
+    ["builder, bare table", "db.update(blocks).set({})"],
+    ["builder, namespaced", "db.update(schema.blocks).set({})"],
+    ["builder, insert", "db.insert(blocks).values({})"],
+    ["builder, delete", "db.delete(blocks).where(x)"],
+    ["builder, whitespace", "db.update( blocks ).set({})"],
+    ["raw, unquoted", "db.run(sql`UPDATE blocks SET text = 1`)"],
+    ["raw, quoted", 'db.run(sql`UPDATE "blocks" SET text = 1`)'],
+    ["raw, drizzle interpolation", "db.run(sql`UPDATE ${blocks} SET text = 1`)"],
+    ["raw, schema-qualified", "db.run(sql`UPDATE main.blocks SET text = 1`)"],
+    ["raw, INSERT OR REPLACE", "db.run(sql`INSERT OR REPLACE INTO blocks VALUES (1)`)"],
+    ["raw, REPLACE INTO", "db.run(sql`REPLACE INTO blocks VALUES (1)`)"],
+    ["raw, UPDATE OR IGNORE", "db.run(sql`UPDATE OR IGNORE blocks SET text = 1`)"],
+    ["raw, DELETE FROM", "db.run(sql`DELETE FROM blocks WHERE id = 1`)"],
+    ["raw, INSERT INTO", "db.run(sql`INSERT INTO blocks VALUES (1)`)"],
+    ["better-sqlite3 direct", 'client.prepare("UPDATE blocks SET text = ?").run(1)'],
+    ["exec script", 'client.exec("UPDATE blocks SET text = 1;")'],
+  ];
+
+  it.each(WRITE_SHAPES)("detects: %s", (_label, source) => {
+    expect(rawWrites(source, "blocks")).toBeGreaterThan(0);
+  });
+
+  it("does not fire on prose or on a neighbouring table", () => {
+    expect(rawWrites("// we update blocks here, eventually", "blocks")).toBe(0);
+    expect(rawWrites("db.update(blocks_audit).set({})", "blocks")).toBe(0);
+    expect(rawWrites("db.run(sql`UPDATE blocks_view SET x = 1`)", "blocks")).toBe(0);
   });
 });

@@ -120,8 +120,20 @@ describe("instantiate", () => {
     const children = blocks.filter((b) => b.parentId === toggle.id);
     expect(children).toHaveLength(2);
     expect(children.map((c) => c.text).sort()).toEqual(["First win", "Second win"]);
-    // Ids are fresh, not the template's.
-    expect(new Set(blocks.map((b) => b.id)).size).toBe(5);
+
+    // Ids must be fresh per instantiation. Asserting that 5 rows have 5
+    // distinct ids is a tautology (id is the primary key), and it stayed green
+    // against a clone that derived ids deterministically from the template.
+    // Two instantiations of the same template is the comparison that bites.
+    const second = await run(made.body.template.id, { title: "Review, week 13" });
+    const secondBlocks = (await bodyOf(
+      await getBlocks({
+        request: apiReq("GET", `/pages/${second.body.page.id}/blocks?wsId=${env.wsId}`, { cookie: env.cookie }),
+        params: { id: second.body.page.id },
+      }),
+    )).blocks as Array<{ id: string }>;
+    const firstIds = new Set(blocks.map((b) => b.id));
+    expect(secondBlocks.map((b) => b.id).filter((id) => firstIds.has(id))).toEqual([]);
   });
 
   it("returns a prefilled payload for an issue template and creates no issue", async () => {

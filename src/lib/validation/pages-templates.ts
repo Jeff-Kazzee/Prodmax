@@ -12,6 +12,7 @@
  */
 import { z } from "zod";
 import { isValidKey } from "@/db/positions";
+import { HttpError } from "@/lib/api/errors";
 
 /** §2.7: page templates carry a block tree. Depth and node count are capped. */
 export const MAX_TEMPLATE_NODES = 1_000;
@@ -65,9 +66,19 @@ export const issueTemplateDataSchema = z
 
 const positionSchema = z.string().max(64).refine(isValidKey, "invalid fractional position key");
 
+/** Section 2.7: {freq, every, next_run_at} (FM-054). */
+export const recurrenceSchema = z
+  .object({
+    freq: z.enum(["daily", "weekly", "monthly"]),
+    every: z.number().int().min(1).max(365),
+    nextRunAt: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
 export const createTemplateSchema = z
   .object({
     kind: z.enum(["issue", "page"]),
+    recurrence: recurrenceSchema.nullable().optional(),
     name: z.string().trim().min(1).max(256),
     description: z.string().max(2_000).nullable().optional(),
     teamId: z.string().min(1).max(64).nullable().optional(),
@@ -78,6 +89,7 @@ export const createTemplateSchema = z
 
 export const patchTemplateSchema = z
   .object({
+    recurrence: recurrenceSchema.nullable().optional(),
     name: z.string().trim().min(1).max(256).optional(),
     description: z.string().max(2_000).nullable().optional(),
     teamId: z.string().min(1).max(64).nullable().optional(),
@@ -102,7 +114,12 @@ export type IssueTemplateData = z.infer<typeof issueTemplateDataSchema>;
 /** Total nodes in a template block tree, children included. */
 export function countTemplateNodes(nodes: readonly TemplateBlockNode[], depth = 0): number {
   if (depth > MAX_TEMPLATE_DEPTH) {
-    throw new Error(`template block tree deeper than ${MAX_TEMPLATE_DEPTH}`);
+    // HttpError, not Error: a plain throw reached route()'s catch-all and
+    // became a 500, and architecture section 3 is explicit that VALIDATION is
+    // 400 on every route.
+    throw new HttpError("VALIDATION", `A page template nests at most ${MAX_TEMPLATE_DEPTH} levels`, [
+      `data.blocks: deeper than ${MAX_TEMPLATE_DEPTH}`,
+    ]);
   }
   return nodes.reduce((n, node) => n + 1 + countTemplateNodes(node.children ?? [], depth + 1), 0);
 }

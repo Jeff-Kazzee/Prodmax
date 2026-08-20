@@ -44,11 +44,15 @@ async function patch(id: string, body: Record<string, unknown>) {
 }
 
 function rowOf(id: string) {
-  return sqlite.prepare("SELECT id, parent_id, path, depth, deleted_at FROM pages WHERE id = ?").get(id) as {
+  return sqlite
+    .prepare("SELECT id, parent_id, path, depth, position, version, deleted_at FROM pages WHERE id = ?")
+    .get(id) as {
     id: string;
     parent_id: string | null;
     path: string;
     depth: number;
+    position: string;
+    version: number;
     deleted_at: number | null;
   };
 }
@@ -140,10 +144,21 @@ describe("move rewrites the whole subtree", () => {
     const a = await newPage("A");
     const b = await newPage("B", a);
     const target = await newPage("T");
+
     await patch(a, { parentId: target });
+    // Prove the move happened before asserting it is stable. Without this a
+    // move that writes nothing at all is also a fixed point, and the test
+    // passed with the entire transaction disabled.
+    expect(rowOf(a).parent_id).toBe(target);
+    expect(rowOf(b).path).toBe(`/${target}/${a}/${b}`);
+
     const first = rowOf(b);
+    const firstA = rowOf(a);
     await patch(a, { parentId: target });
+    // rowOf carries position and version now, so a replay that re-spaces
+    // siblings or double-bumps the version is inside the assertion.
     expect(rowOf(b)).toEqual(first);
+    expect(rowOf(a)).toEqual(firstA);
   });
 });
 

@@ -272,8 +272,16 @@ describe("request handling", () => {
     expect(second.body.data).toHaveLength(3);
     const firstIds = first.body.data.map((h: { entityId: string }) => h.entityId);
     const secondIds = second.body.data.map((h: { entityId: string }) => h.entityId);
-    // A partial sort order would let a row appear on both pages.
     expect(firstIds.filter((id: string) => secondIds.includes(id))).toEqual([]);
+
+    // Disjointness alone cannot fail: offset paging over any deterministic
+    // order gives disjoint pages. What matters is that the order is TOTAL, so
+    // the paged sequence equals the unpaged one. Dropping the tiebreakers from
+    // the comparator leaves score ties ordered arbitrarily and breaks this.
+    const all = await query("payment", "&limit=100");
+    expect([...firstIds, ...secondIds]).toEqual(
+      all.body.data.slice(0, 6).map((h: { entityId: string }) => h.entityId),
+    );
   });
 
   it("returns nothing for an empty query rather than everything", async () => {

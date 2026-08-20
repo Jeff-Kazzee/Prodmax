@@ -20,8 +20,10 @@
  */
 import { json, route } from "@/lib/api/errors";
 import { requireWsId } from "@/lib/services/issues-helpers";
+import { treeQuerySchema } from "@/lib/validation/pages";
 import { requireDocs } from "@/lib/services/pages-access";
 import { pageTree } from "@/lib/services/pages";
+import { HttpError } from "@/lib/api/errors";
 
 type Ctx = { request: Request };
 
@@ -29,6 +31,12 @@ export const GET = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
   const docs = requireDocs(ctx.request, wsId);
   const raw = new URL(ctx.request.url).searchParams.get("expanded");
-  const expanded = raw === null || raw.trim().length === 0 ? [] : raw.split(",").map((s) => s.trim()).filter(Boolean);
-  return json({ data: pageTree(docs, expanded) });
+  const list = raw === null || raw.trim().length === 0 ? [] : raw.split(",").map((s) => s.trim()).filter(Boolean);
+  // Parsed rather than trusted: the schema carries the id character class and
+  // the 2,000-node cap, which a bare CSV split does not.
+  const parsed = treeQuerySchema.safeParse({ expanded: list });
+  if (!parsed.success) {
+    throw new HttpError("VALIDATION", "Invalid expanded list", parsed.error.issues.map((i) => i.message));
+  }
+  return json({ data: pageTree(docs, parsed.data.expanded ?? []) });
 });

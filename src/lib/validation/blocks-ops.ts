@@ -83,9 +83,9 @@ export type InsertOp = z.infer<typeof insertOpSchema>;
 /**
  * POST /api/pages/:pageId/blocks/batch.
  *
- * The size cap is enforced in the route so it can answer 413 rather than the
- * 400 a zod `.max()` would produce; the schema keeps a hard ceiling well above
- * it so a hostile payload cannot be parsed into memory unbounded.
+ * The size cap is enforced in `applyBlockOps` so it can answer 413 rather than
+ * the 400 a zod `.max()` would produce; the schema keeps a hard ceiling well
+ * above it so a hostile payload cannot be parsed into memory unbounded.
  */
 export const blockBatchSchema = z
   .object({ ops: z.array(blockOpSchema).min(1).max(MAX_BATCH_OPS * 4) })

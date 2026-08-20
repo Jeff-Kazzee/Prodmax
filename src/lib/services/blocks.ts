@@ -12,12 +12,12 @@
  * one, so nest rules, sanitization, positions and the page version bump have
  * exactly one implementation.
  */
-import { eq } from "drizzle-orm";
-import { blocks } from "@/db/schema";
+import { and, eq, isNull } from "drizzle-orm";
+import { blocks, pages, views } from "@/db/schema";
 import { uuid7 } from "@/db/ids";
 import { currentDb } from "@/lib/api/db";
 import { HttpError } from "@/lib/api/errors";
-import { sanitizeBlock } from "@/lib/validation/blocks";
+import { childrenAllowed, sanitizeBlock, type SanitizedBlock } from "@/lib/validation/blocks";
 import { MAX_BATCH_OPS, type BlockOp } from "@/lib/validation/blocks-ops";
 import { requireLivePage, workspaceMentions, type DocsCtx } from "./pages-access";
 import { touchPageAfterBlockWrite } from "./pages";
@@ -102,13 +102,39 @@ export function applyBlockOps(
         case "insert": {
           const existing = live.get(op.id);
           const block = sanitizeBlock({ type: op.type, props: op.props }, mentions, at);
+          assertBlockReferences(ctx, block, at);
           if (existing !== undefined) {
             // Replay convergence. ED-12 flushes the offline queue as one batch
             // on reconnect, so the same insert can legitimately arrive twice;
             // a 409 there would be data loss. Re-applying is idempotent.
             const updated = updateBlockRow(ctx, existing, block, null, now);
             live.set(updated.id, updated);
+            // The view has to learn the new type too. Leaving it stale let a
+            // later op in the same batch nest a child under what the view still
+            // called a toggle after it had become a paragraph.
+            const seenReplay = view.byId.get(updated.id);
+            if (seenReplay) seenReplay.type = block.type;
             touched.add(updated.id);
+            break;
+          }
+          // A soft-deleted row keeps its primary key, so `live` (which filters
+          // deleted rows) does not see it and the insert used to collide on the
+          // PK and 500. ux-spec ED-11 undo of a delete re-inserts under the
+          // client's own id and §3.6 has no block restore endpoint, so this is
+          // the only path back. Revive it instead.
+          const buried = reviveDeletedBlock(ctx, op.id, pageId, at);
+          if (buried !== undefined) {
+            const placement = resolvePlacement(view, op, op.id, at);
+            const revived = updateBlockRow(ctx, buried, block, placement, now, { restore: true });
+            live.set(revived.id, revived);
+            view.byId.set(revived.id, {
+              id: revived.id,
+              parentId: revived.parentId,
+              type: block.type,
+              position: revived.position,
+            });
+            syncView(view, placement);
+            touched.add(revived.id);
             break;
           }
           assertUnclaimedId(ctx, op.id, pageId, at);
@@ -129,6 +155,17 @@ export function applyBlockOps(
           const row = requireOnPage(live, op.id, at);
           const type = op.type ?? row.type;
           const block = sanitizeBlock({ type, props: op.props }, mentions, at);
+          assertBlockReferences(ctx, block, at);
+          // Turn-into is the other side of the nest rule. `Placement` stops a
+          // child being written under a leaf; it cannot stop the parent being
+          // turned INTO a leaf while it still has children. ux-spec ED-06
+          // offers exactly that conversion (toggle to paragraph), so without
+          // this a valid UI action produced children parented to a paragraph.
+          if (!childrenAllowed(block.type) && hasChildren(view, op.id)) {
+            throw new HttpError("VALIDATION", `${block.type} blocks do not accept children`, [
+              `${at}.type: ${block.type}`,
+            ]);
+          }
           const updated = updateBlockRow(ctx, row, block, null, now);
           live.set(updated.id, updated);
           const seen = view.byId.get(updated.id);
@@ -181,6 +218,62 @@ function syncView(view: SiblingView, placement: { rebalance: ReadonlyArray<{ id:
     const seen = view.byId.get(id);
     if (seen) seen.position = position;
   }
+}
+
+/**
+ * Reference-bearing props must point at something real in this workspace.
+ *
+ * Section 2.6 types `issue_view.viewId` as an FK to views and `page_link.pageId`
+ * as a page. Storing a dangling id turns a write-time error into a render-time
+ * one for T-010's embed, which is the worse place to find it.
+ */
+function assertBlockReferences(ctx: DocsCtx, block: SanitizedBlock, at: string): void {
+  const props = block.props as Record<string, unknown>;
+  if (block.type === "issue_view") {
+    const viewId = props.viewId as string;
+    const found = currentDb()
+      .select({ id: views.id })
+      .from(views)
+      .where(and(eq(views.workspaceId, ctx.wsId), eq(views.id, viewId)))
+      .get();
+    if (found === undefined) {
+      throw new HttpError("VALIDATION", "viewId must be a view in this workspace", [`${at}.props.viewId: ${viewId}`]);
+    }
+  }
+  if (block.type === "page_link") {
+    const pageId = props.pageId as string;
+    const found = currentDb()
+      .select({ id: pages.id })
+      .from(pages)
+      .where(and(eq(pages.workspaceId, ctx.wsId), eq(pages.id, pageId), isNull(pages.deletedAt)))
+      .get();
+    if (found === undefined) {
+      throw new HttpError("VALIDATION", "pageId must be a live page in this workspace", [
+        `${at}.props.pageId: ${pageId}`,
+      ]);
+    }
+  }
+}
+
+/** True when any live block on the page is parented to `id`. */
+function hasChildren(view: SiblingView, id: string): boolean {
+  for (const b of view.byId.values()) if (b.parentId === id) return true;
+  return false;
+}
+
+/**
+ * A soft-deleted block on this page, if the id names one.
+ *
+ * Scoped to the caller's workspace and page: an id naming a deleted block
+ * somewhere else is still a conflict, not something to quietly adopt.
+ */
+function reviveDeletedBlock(ctx: DocsCtx, id: string, pageId: string, at: string): BlockRow | undefined {
+  const row = currentDb().select().from(blocks).where(eq(blocks.id, id)).get();
+  if (row === undefined || row.deletedAt === null) return undefined;
+  if (row.workspaceId !== ctx.wsId || row.pageId !== pageId) {
+    throw new HttpError("CONFLICT", "Block id already exists elsewhere", [`${at}.id: ${id}`]);
+  }
+  return row;
 }
 
 function requireOnPage(live: Map<string, BlockRow>, id: string, at: string): BlockRow {
@@ -247,14 +340,25 @@ export function createBlock(ctx: DocsCtx, pageId: string, input: CreateBlockInpu
 }
 
 /** Find the page a block belongs to, scoped to the caller's workspace. */
-export function requireBlockPageId(ctx: DocsCtx, blockId: string): string {
+export function requireBlockPageId(ctx: DocsCtx, blockId: string, expectedVersion?: number): string {
   const row = currentDb()
-    .select({ pageId: blocks.pageId, workspaceId: blocks.workspaceId, deletedAt: blocks.deletedAt })
+    .select({
+      pageId: blocks.pageId,
+      workspaceId: blocks.workspaceId,
+      deletedAt: blocks.deletedAt,
+      version: blocks.version,
+    })
     .from(blocks)
     .where(eq(blocks.id, blockId))
     .get();
   if (row === undefined || row.workspaceId !== ctx.wsId || row.deletedAt !== null) {
     throw new HttpError("NOT_FOUND", "Block not found");
+  }
+  if (expectedVersion !== undefined && row.version !== expectedVersion) {
+    throw new HttpError("CONFLICT", "Version conflict", [
+      `expectedVersion: ${expectedVersion}`,
+      `actual: ${row.version}`,
+    ]);
   }
   return row.pageId;
 }
@@ -271,8 +375,13 @@ export interface PatchBlockInput {
  * PATCH /api/blocks/:id. A props edit and a move are separate ops even when
  * one request carries both, so each goes through its own validation.
  */
-export function patchBlock(ctx: DocsCtx, blockId: string, input: PatchBlockInput): BlockDto {
-  const pageId = requireBlockPageId(ctx, blockId);
+export function patchBlock(
+  ctx: DocsCtx,
+  blockId: string,
+  input: PatchBlockInput,
+  expectedVersion?: number,
+): BlockDto {
+  const pageId = requireBlockPageId(ctx, blockId, expectedVersion);
   const ops: BlockOp[] = [];
   if (input.props !== undefined) {
     ops.push({ op: "update", id: blockId, type: input.type, props: input.props });
@@ -294,7 +403,7 @@ export function patchBlock(ctx: DocsCtx, blockId: string, input: PatchBlockInput
 }
 
 /** DELETE /api/blocks/:id. Soft delete, children included. */
-export function deleteBlock(ctx: DocsCtx, blockId: string): { deleted: string[] } {
-  const pageId = requireBlockPageId(ctx, blockId);
+export function deleteBlock(ctx: DocsCtx, blockId: string, expectedVersion?: number): { deleted: string[] } {
+  const pageId = requireBlockPageId(ctx, blockId, expectedVersion);
   return { deleted: applyBlockOps(ctx, pageId, [{ op: "delete", id: blockId }], "block").deleted };
 }

@@ -61,20 +61,26 @@ export interface StatementLog<T> {
 }
 
 /**
- * Every SQL statement executed on `sqlite` while `fn` runs.
+ * Every SQL statement EXECUTED on `sqlite` while `fn` runs, one entry per
+ * execution.
+ *
+ * Counting executions rather than `prepare` calls is the whole point, and the
+ * first version of this helper got it wrong. A better-sqlite3 `Statement` is
+ * reusable, so the N+1 a performance regression actually produces (prepare
+ * once outside the loop, execute per row) called `prepare` exactly once and
+ * was invisible. A reviewer proved it: a recursive child walk doing 61
+ * executions over `blocks` left the "exactly one query" assertion green.
+ *
+ * So the patch wraps the returned `Statement` and records on `.all()`,
+ * `.get()`, `.run()` and `.iterate()`. A hoisted prepare now shows up as 61
+ * entries, which is what it is.
  *
  * Tests hold the raw better-sqlite3 handle from `createApiDb()`; handlers hold
  * the Drizzle wrapper installed by `setDbOverride`. They are the same
- * connection object, so patching `prepare` here observes handler traffic.
+ * connection object, so patching here observes handler traffic.
  *
- * Measured against this repo's drizzle-orm before relying on it:
- *   - two identical selects call `prepare` twice, so Drizzle does not cache
- *     and the prepare count equals the execution count;
- *   - `db.transaction()` does not route BEGIN/COMMIT through the public
- *     `prepare`, so wrapping code in a transaction does not change the count.
- *
- * `exec` is patched alongside `prepare` because a raw multi-statement exec
- * would otherwise be invisible, and invisible is what a regression wants.
+ * `exec` is patched too, because a raw multi-statement exec would otherwise be
+ * invisible, and invisible is what a regression wants.
  *
  * Not safe under concurrent tests: the patch is global to the handle. The
  * docs suites run sequentially, which is vitest's default within a file.
@@ -86,14 +92,28 @@ export async function recordStatements<T>(
   const sql: string[] = [];
   const prep = sqlite.prepare.bind(sqlite);
   const exec = sqlite.exec.bind(sqlite);
-  sqlite.prepare = ((q: string) => {
-    sql.push(q);
-    return prep(q);
+
+  sqlite.prepare = ((source: string) => {
+    const statement = prep(source);
+    for (const method of ["all", "get", "run", "iterate"] as const) {
+      const original = statement[method];
+      if (typeof original !== "function") continue;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- better-sqlite3's
+      // Statement methods are heavily overloaded; the wrapper is transparent and
+      // only records, so the parameter types are irrelevant here.
+      (statement as any)[method] = (...args: unknown[]) => {
+        sql.push(source);
+        return (original as (...a: unknown[]) => unknown).apply(statement, args);
+      };
+    }
+    return statement;
   }) as typeof sqlite.prepare;
+
   sqlite.exec = ((q: string) => {
     sql.push(q);
     return exec(q);
   }) as typeof sqlite.exec;
+
   try {
     return { result: await fn(), sql };
   } finally {

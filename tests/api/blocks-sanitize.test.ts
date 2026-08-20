@@ -232,6 +232,6 @@ describe("structural problems are rejected rather than sanitized", () => {
       params: { id: pageId },
     });
     expect(res.status).toBe(400);
-    expect((await bodyOf(res)).error.details.join(" ")).toContain("url scheme must be http, https or mailto");
+    expect((await bodyOf(res)).error.details.join(" ")).toContain("url must be http, https or a root-relative path");
   });
 });

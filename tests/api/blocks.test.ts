@@ -11,6 +11,7 @@ import { POST as createPage } from "@/pages/api/pages/index";
 import { GET as getBlocks, POST as postBlock } from "@/pages/api/pages/[id]/blocks/index";
 import { POST as postBatch } from "@/pages/api/pages/[id]/blocks/batch";
 import { PATCH as patchBlock, DELETE as deleteBlock } from "@/pages/api/blocks/[id]";
+import { BLOCK_TYPES } from "@/lib/validation/blocks";
 import { apiReq, bodyOf, createApiDb, teardownApiDb } from "./helpers";
 import { docsEnv, explain, recordStatements, rt, touching, type DocsEnv } from "./pages-harness";
 
@@ -51,6 +52,18 @@ async function batch(pageId: string, ops: unknown[]) {
   return { res, body: await bodyOf(res) };
 }
 
+/** A saved view, so issue_view blocks can carry a viewId that resolves. */
+async function seedView(): Promise<string> {
+  const id = `view-${Math.random().toString(36).slice(2, 10)}`;
+  sqlite
+    .prepare(
+      `INSERT INTO views (id, workspace_id, owner_id, scope, name, layout, filters, order_by, order_dir, display, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    )
+    .run(id, env.wsId, env.userId, "workspace", "V", "list", "{}", "created", "desc", "{}", Date.now(), Date.now());
+  return id;
+}
+
 async function readBlocks(pageId: string) {
   const res = await getBlocks({
     request: apiReq("GET", `/pages/${pageId}/blocks?wsId=${env.wsId}`, { cookie: env.cookie }),
@@ -84,7 +97,12 @@ describe("page open is one query (architecture §9)", () => {
     // still pass the count, while giving up the composite index.
     expect(onBlocks[0]).toMatch(/order by/i);
     expect(onBlocks[0]).not.toMatch(/\bjoin\b/i);
-    expect(explain(sqlite, onBlocks[0]).join(" ")).toContain("blocks_page_parent_position_idx");
+    const plan = explain(sqlite, onBlocks[0]).join(" ");
+    expect(plan).toContain("blocks_page_parent_position_idx");
+    // The index name alone proves nothing about the ordering: it still serves
+    // the page_id lookup when the ORDER BY has moved to a sort buffer. This is
+    // the assertion that actually pins the composite index doing the ordering.
+    expect(plan).not.toContain("USE TEMP B-TREE FOR ORDER BY");
   });
 
   it("costs the same number of blocks statements at 3 blocks as at 60", async () => {
@@ -116,10 +134,36 @@ describe("page open is one query (architecture §9)", () => {
 });
 
 describe("nest rules (§2.6 children-allowed column)", () => {
-  const CONTAINERS = ["bulleted_list", "numbered_list", "todo", "toggle"];
-  const LEAVES = ["paragraph", "heading_1", "quote", "callout", "divider", "code", "table", "page_link"];
+  /**
+   * Transcribed by hand from architecture §2.6's "children allowed" column.
+   * Deriving it from BLOCK_SPECS would make the test agree with the code by
+   * construction instead of with the spec, and would leave an inverted flag
+   * invisible. All 19 rows are here: covering only some of them let
+   * `heading_2` flip to child-bearing with every suite still green.
+   */
+  const CHILDREN_ALLOWED: Record<string, boolean> = {
+    paragraph: false,
+    heading_1: false,
+    heading_2: false,
+    heading_3: false,
+    bulleted_list: true,
+    numbered_list: true,
+    todo: true,
+    toggle: true,
+    quote: false,
+    callout: false,
+    divider: false,
+    code: false,
+    image: false,
+    file: false,
+    bookmark: false,
+    embed: false,
+    table: false,
+    issue_view: false,
+    page_link: false,
+  };
 
-  function propsFor(type: string): unknown {
+  function propsFor(type: string, refs: { viewId: string; pageId: string }): unknown {
     switch (type) {
       case "todo":
         return { text: rt("t"), checked: false };
@@ -131,38 +175,47 @@ describe("nest rules (§2.6 children-allowed column)", () => {
         return {};
       case "code":
         return { code: "x", language: "ts", wrap: false };
+      case "image":
+        return { url: "https://example.test/a.png" };
+      case "file":
+        return { url: "https://example.test/a.pdf", name: "a.pdf" };
+      case "bookmark":
+        return { url: "https://example.test", title: "T", description: "D", icon: "https://example.test/i.png" };
+      case "embed":
+        return { url: "https://example.test/e", provider: "test" };
       case "table":
         return { rows: [[rt("a")]], headerRow: true };
+      case "issue_view":
+        return { viewId: refs.viewId };
       case "page_link":
-        return { pageId: "p1", title: "T", icon: null };
+        return { pageId: refs.pageId, title: "T" };
       default:
         return { text: rt("t") };
     }
   }
 
-  it.each(CONTAINERS)("%s accepts children", async (type) => {
-    const pageId = await newPage();
-    const parent = await addBlock(pageId, { type, props: propsFor(type) });
-    expect(parent.res.status).toBe(201);
-    const child = await addBlock(pageId, {
-      type: "paragraph",
-      props: { text: rt("child") },
-      parentId: parent.body.block.id,
-    });
-    expect(child.res.status).toBe(201);
+  it("covers every block type the schema allows", () => {
+    expect(Object.keys(CHILDREN_ALLOWED).sort()).toEqual([...BLOCK_TYPES].sort());
   });
 
-  it.each(LEAVES)("%s refuses children", async (type) => {
+  it.each(BLOCK_TYPES)("%s honours its children-allowed column", async (type) => {
     const pageId = await newPage();
-    const parent = await addBlock(pageId, { type, props: propsFor(type) });
-    expect(parent.res.status).toBe(201);
+    const refs = { viewId: await seedView(), pageId: await newPage("link target") };
+    const parent = await addBlock(pageId, { type, props: propsFor(type, refs) });
+    expect(parent.res.status, `creating a ${type} block: ${JSON.stringify(parent.body)}`).toBe(201);
+
     const child = await addBlock(pageId, {
       type: "paragraph",
       props: { text: rt("child") },
       parentId: parent.body.block.id,
     });
-    expect(child.res.status).toBe(400);
-    expect(child.body.error.message).toBe(`${type} blocks do not accept children`);
+
+    if (CHILDREN_ALLOWED[type]) {
+      expect(child.res.status, `${type} should accept children`).toBe(201);
+    } else {
+      expect(child.res.status, `${type} should refuse children`).toBe(400);
+      expect(child.body.error.message).toBe(`${type} blocks do not accept children`);
+    }
   });
 });
 
@@ -210,16 +263,18 @@ describe("batch is one transaction", () => {
     expect((await readBlocks(pageId)).body.blocks).toHaveLength(first);
   });
 
-  it("rejects a batch over the op cap with 413", async () => {
-    const pageId = await newPage();
-    const ops = Array.from({ length: 501 }, (_, i) => ({
-      op: "insert",
-      id: `c${i}`,
-      type: "paragraph",
-      props: { text: rt("x") },
-    }));
-    const { res } = await batch(pageId, ops);
-    expect(res.status).toBe(413);
+  it("accepts a batch at the op cap and rejects one over it", async () => {
+    const opsOf = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        op: "insert",
+        id: `c${i}`,
+        type: "paragraph",
+        props: { text: rt("x") },
+      }));
+    // Both sides of the boundary. Testing only the over-cap case let the
+    // comparison flip to >= and start rejecting legal 500-op batches unseen.
+    expect((await batch(await newPage("at cap"), opsOf(500))).res.status).toBe(200);
+    expect((await batch(await newPage("over cap"), opsOf(501))).res.status).toBe(413);
   });
 });
 

@@ -28,8 +28,24 @@ import {
   type RichTextNode,
 } from "./blocks-richtext";
 
-/** A URL stored in props (image/file/bookmark/embed), same schemes as marks. */
+/** A URL stored in props (bookmark/embed), same schemes as marks. */
 const urlSchema = z.string().max(2048).refine(isAllowedLinkUrl, "url scheme must be http, https or mailto");
+
+/**
+ * An asset URL for image and file blocks.
+ *
+ * Accepts a root-relative path as well as an absolute http(s) URL, because
+ * uploads are served from a local path and `new URL()` refuses anything with
+ * no scheme. Without this an image block could not reference its own upload.
+ * A protocol-relative `//host/x` is refused: it looks relative and is not.
+ */
+const assetUrlSchema = z
+  .string()
+  .max(2048)
+  .refine(
+    (v) => (v.startsWith("/") ? !v.startsWith("//") : isAllowedLinkUrl(v) && !v.startsWith("mailto:")),
+    "url must be http, https or a root-relative path",
+  );
 
 interface BlockSpec<S extends z.ZodTypeAny> {
   readonly props: S;
@@ -91,14 +107,22 @@ export const BLOCK_SPECS = {
     z.object({ code: z.string().max(100_000), language: z.string().max(32), wrap: z.boolean() }).strict(),
     (p) => p.code,
   ),
+  // `url` is optional so ux-spec ED-08's upload placeholder can exist as a
+  // block before the upload finishes and supplies one.
   image: plain(
-    z.object({ url: urlSchema, caption: z.string().max(1_000).optional(), file: fileRefSchema.optional() }).strict(),
+    z
+      .object({
+        url: assetUrlSchema.optional(),
+        caption: z.string().max(1_000).optional(),
+        file: fileRefSchema.optional(),
+      })
+      .strict(),
     (p) => p.caption ?? "",
   ),
   file: plain(
     z
       .object({
-        url: urlSchema,
+        url: assetUrlSchema,
         name: z.string().max(256),
         size: z.number().int().nonnegative().optional(),
         mime: z.string().max(128).optional(),
@@ -123,7 +147,12 @@ export const BLOCK_SPECS = {
   ),
   // §2.6: cells are stored inline in props, never as child blocks.
   table: spec({
-    props: z.object({ rows: z.array(z.array(richTextSchema)).max(500), headerRow: z.boolean() }).strict(),
+    // Both dimensions are capped. Capping only `rows` let one block carry
+    // 200,000 richText nodes, which held the single SQLite writer for 1.6s and
+    // stalled every other workspace on the process.
+    props: z
+      .object({ rows: z.array(z.array(richTextSchema).max(64)).max(500), headerRow: z.boolean() })
+      .strict(),
     children: false,
     clean: (props, mentions) => {
       const rows = props.rows.map((row) => row.map((cell) => sanitizeRichText(cell, mentions)));
@@ -137,7 +166,11 @@ export const BLOCK_SPECS = {
   ),
   page_link: plain(
     z
-      .object({ pageId: z.string().min(1).max(64), title: z.string().max(512), icon: z.string().max(16).nullable() })
+      .object({
+        pageId: z.string().min(1).max(64),
+        title: z.string().max(512),
+        icon: z.string().max(16).nullable().optional(),
+      })
       .strict(),
     (p) => p.title,
   ),

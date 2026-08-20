@@ -1,6 +1,7 @@
 /** GET/POST /api/templates?wsId=&kind=. List and create (§3.6, §2.7). */
 import { json, route } from "@/lib/api/errors";
 import { HttpError } from "@/lib/api/errors";
+import { paginate, pageParams } from "@/lib/api/paginate";
 import { parseBody } from "@/lib/api/parse";
 import { requireWsId } from "@/lib/services/issues-helpers";
 import { createTemplateSchema } from "@/lib/validation/pages-templates";
@@ -12,11 +13,13 @@ type Ctx = { request: Request };
 export const GET = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
   const docs = requireDocs(ctx.request, wsId);
-  const raw = new URL(ctx.request.url).searchParams.get("kind");
+  const url = new URL(ctx.request.url);
+  const raw = url.searchParams.get("kind");
   if (raw !== null && raw !== "issue" && raw !== "page") {
     throw new HttpError("VALIDATION", "kind must be issue or page", [`kind: ${raw}`]);
   }
-  return json({ data: listTemplates(docs, raw ?? undefined), nextCursor: null });
+  const { limit } = pageParams(url);
+  return json(paginate(listTemplates(docs, raw ?? undefined), url.searchParams.get("cursor"), limit));
 });
 
 export const POST = route(async (ctx: Ctx) => {

@@ -28,6 +28,17 @@ import { descendantRange, requirePage, type DocsCtx, type PageRow } from "./page
 import { movePage, toPageDto, type PageDto } from "./pages";
 
 /**
+ * The 30-day restore window (DH-05), as one predicate.
+ *
+ * The listing and the restore path each spelled this out and disagreed by one
+ * millisecond at the exact boundary, where a page was absent from the trash
+ * listing and still restorable.
+ */
+export function withinTrashWindow(deletedAt: number, now: number): boolean {
+  return deletedAt + TRASH_WINDOW_MS > now;
+}
+
+/**
  * A stamp no earlier trash in this workspace has used.
  *
  * Bounded to stamps at or after `now`, so the scan cannot be dragged by an
@@ -82,7 +93,7 @@ export function trashPage(ctx: DocsCtx, id: string): PageDto {
 export function restorePage(ctx: DocsCtx, id: string): PageDto {
   const page = requirePage(ctx, id);
   if (page.deletedAt === null) return toPageDto(page);
-  if (Date.now() > page.deletedAt + TRASH_WINDOW_MS) {
+  if (!withinTrashWindow(page.deletedAt, Date.now())) {
     throw new HttpError("NOT_FOUND", "The restore window for this page has closed");
   }
 
@@ -125,13 +136,14 @@ export function restorePage(ctx: DocsCtx, id: string): PageDto {
  * M10 admin surface (T-019).
  */
 export function listTrashedPages(ctx: DocsCtx): PageDto[] {
-  const cutoff = Date.now() - TRASH_WINDOW_MS;
+  const now = Date.now();
   const trashed = currentDb()
     .select()
     .from(pages)
-    .where(and(eq(pages.workspaceId, ctx.wsId), isNotNull(pages.deletedAt), sql`${pages.deletedAt} > ${cutoff}`))
+    .where(and(eq(pages.workspaceId, ctx.wsId), isNotNull(pages.deletedAt)))
     .orderBy(asc(pages.deletedAt))
-    .all();
+    .all()
+    .filter((row) => row.deletedAt !== null && withinTrashWindow(row.deletedAt, now));
 
   const byId = new Map<string, PageRow>(trashed.map((r) => [r.id, r]));
   return trashed

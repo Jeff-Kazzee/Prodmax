@@ -1,5 +1,6 @@
 /** GET/POST /api/pages?wsId=. List (or trash listing) and create (§3.6). */
 import { json, route } from "@/lib/api/errors";
+import { paginate, pageParams } from "@/lib/api/paginate";
 import { parseBody } from "@/lib/api/parse";
 import { requireWsId } from "@/lib/services/issues-helpers";
 import { createPageSchema } from "@/lib/validation/pages";
@@ -14,8 +15,11 @@ export const GET = route(async (ctx: Ctx) => {
   const docs = requireDocs(ctx.request, wsId);
   // ?trashed=true is the DH-05 restore surface, which lists one row per delete
   // operation rather than every trashed page.
-  const trashed = new URL(ctx.request.url).searchParams.get("trashed") === "true";
-  return json({ data: trashed ? listTrashedPages(docs) : listPages(docs), nextCursor: null });
+  const url = new URL(ctx.request.url);
+  const trashed = url.searchParams.get("trashed") === "true";
+  const rows = trashed ? listTrashedPages(docs) : listPages(docs);
+  const { limit } = pageParams(url);
+  return json(paginate(rows, url.searchParams.get("cursor"), limit));
 });
 
 export const POST = route(async (ctx: Ctx) => {

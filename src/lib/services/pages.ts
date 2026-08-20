@@ -137,6 +137,18 @@ function deepestInSubtree(ctx: DocsCtx, page: PageRow): number {
   return row?.d ?? page.depth;
 }
 
+/**
+ * Optimistic concurrency. Architecture section 3 is binding: every mutating
+ * endpoint accepts `?expectedVersion=` where the entity is versioned, and a
+ * mismatch is 409 CONFLICT (FM-090). Mirrors `assertExpectedVersion` in the
+ * issues module.
+ */
+export function assertPageVersion(page: PageRow, expected: number | undefined): void {
+  if (expected !== undefined && page.version !== expected) {
+    throw new HttpError("CONFLICT", "Version conflict", [`expectedVersion: ${expected}`, `actual: ${page.version}`]);
+  }
+}
+
 function assertDepth(depth: number): void {
   if (depth > MAX_PAGE_DEPTH) {
     throw new HttpError("VALIDATION", `Page depth cap is ${MAX_PAGE_DEPTH}`, [`depth: ${depth}`]);
@@ -239,14 +251,26 @@ export function pageTree(ctx: DocsCtx, expanded: readonly string[]): TreeNodeDto
     .orderBy(asc(pages.position))
     .all();
 
+  // Scoped to the visible ids. Asking which parents have children across the
+  // whole workspace made the second statement O(all live pages) while the
+  // response stayed O(visible), which is not the budget section 9 sets.
+  const visibleIds = visible.map((row) => row.id);
   const parentsWithChildren = new Set(
-    currentDb()
-      .selectDistinct({ parentId: pages.parentId })
-      .from(pages)
-      .where(and(eq(pages.workspaceId, ctx.wsId), isNull(pages.deletedAt)))
-      .all()
-      .map((r) => r.parentId)
-      .filter((p): p is string => p !== null),
+    visibleIds.length === 0
+      ? []
+      : currentDb()
+          .selectDistinct({ parentId: pages.parentId })
+          .from(pages)
+          .where(
+            and(
+              eq(pages.workspaceId, ctx.wsId),
+              isNull(pages.deletedAt),
+              inArray(pages.parentId, visibleIds),
+            ),
+          )
+          .all()
+          .map((r) => r.parentId)
+          .filter((p): p is string => p !== null),
   );
 
   return visible.map((row) => ({ ...toPageDto(row), hasChildren: parentsWithChildren.has(row.id) }));
@@ -272,6 +296,8 @@ export function movePage(
   ctx: DocsCtx,
   id: string,
   intent: { parentId?: string | null; afterId?: string | null; beforeId?: string | null },
+  /** Metadata written in the same UPDATE, so one PATCH bumps `version` once. */
+  extra: Partial<typeof pages.$inferInsert> = {},
 ): PageDto {
   const page = requireLivePage(ctx, id);
   const nextParentId = intent.parentId === undefined ? page.parentId : intent.parentId;
@@ -292,6 +318,19 @@ export function movePage(
   const placement = placeAmongSiblings(ctx, nextParentId, intent, page.id);
   const now = Date.now();
 
+  // A move that changes nothing writes nothing. Without this the row still got
+  // a version bump, so replaying the identical move was a fixed point in path,
+  // depth and position but not in `version`, which is the optimistic-concurrency
+  // key an offline client compares against. Skipped when a rebalance is due,
+  // since that has siblings to re-space regardless.
+  const unchanged =
+    nextParentId === page.parentId &&
+    newPath === page.path &&
+    placement.position === page.position &&
+    (placement.rebalance === undefined || placement.rebalance.length === 0) &&
+    Object.keys(extra).length === 0;
+  if (unchanged) return toPageDto(page);
+
   currentDb().transaction(() => {
     applyRebalance(placement.rebalance);
     if (delta !== 0 || newPath !== page.path) {
@@ -309,6 +348,7 @@ export function movePage(
     currentDb()
       .update(pages)
       .set({
+        ...extra,
         parentId: nextParentId,
         path: newPath,
         depth: newDepth,
@@ -330,8 +370,9 @@ export function movePage(
  * §3.6 lists no separate move route, so reparenting and reordering ride here
  * and delegate to `movePage` when placement intent is present.
  */
-export function patchPage(ctx: DocsCtx, id: string, input: PatchPageInput): PageDto {
+export function patchPage(ctx: DocsCtx, id: string, input: PatchPageInput, expectedVersion?: number): PageDto {
   const page = requireLivePage(ctx, id);
+  assertPageVersion(page, expectedVersion);
   const moving = input.parentId !== undefined || input.afterId !== undefined || input.beforeId !== undefined;
 
   const patch: Partial<typeof pages.$inferInsert> = {};
@@ -339,15 +380,22 @@ export function patchPage(ctx: DocsCtx, id: string, input: PatchPageInput): Page
   if (input.icon !== undefined) patch.icon = input.icon;
   if (input.archived !== undefined) patch.archivedAt = input.archived ? Date.now() : null;
 
-  if (Object.keys(patch).length > 0) {
-    const now = Date.now();
-    currentDb()
-      .update(pages)
-      .set({ ...patch, version: page.version + 1, updatedAt: now, updatedBy: ctx.userId })
-      .where(eq(pages.id, page.id))
-      .run();
-  }
-
-  if (moving) return movePage(ctx, id, input);
-  return toPageDto(requirePage(ctx, id));
+  // One transaction for the whole request. The metadata UPDATE used to run
+  // outside one, so a PATCH carrying a rename and a rejected move committed the
+  // rename and still returned an error. better-sqlite3 turns the inner
+  // transaction in movePage into a SAVEPOINT, so nesting is safe.
+  return currentDb().transaction(() => {
+    // A move rewrites the same row, so folding the metadata into it keeps one
+    // UPDATE and therefore one version bump per request.
+    if (moving) return movePage(ctx, id, input, patch);
+    if (Object.keys(patch).length > 0) {
+      const now = Date.now();
+      currentDb()
+        .update(pages)
+        .set({ ...patch, version: page.version + 1, updatedAt: now, updatedBy: ctx.userId })
+        .where(eq(pages.id, page.id))
+        .run();
+    }
+    return toPageDto(requirePage(ctx, id));
+  });
 }

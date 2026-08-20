@@ -143,8 +143,23 @@ export function resolvePlacement(
         `${at}.parentId: ${parentId}`,
       ]);
     }
-    if (parentId === excludeId) {
-      throw new HttpError("VALIDATION", "A block cannot be its own parent", [`${at}.parentId: ${parentId}`]);
+    // Cycle detection. Rejecting only `parentId === excludeId` catches
+    // self-parenting and misses the real case: moving a block under its own
+    // descendant. That produced a two-block ring that no client tree could
+    // render and no delete could remove, because the subtree walk below had no
+    // termination condition. Walk the ancestor chain of the target instead.
+    if (excludeId !== undefined) {
+      const seen = new Set<string>();
+      for (let id: string | null = parentId; id !== null; id = view.byId.get(id)?.parentId ?? null) {
+        if (id === excludeId) {
+          throw new HttpError("CONFLICT", "A block cannot be moved into its own subtree", [
+            `${at}.parentId: ${parentId}`,
+          ]);
+        }
+        // A ring already in the table must not spin here either.
+        if (seen.has(id)) break;
+        seen.add(id);
+      }
     }
   }
 
@@ -234,12 +249,16 @@ export function updateBlockRow(
   block: SanitizedBlock | null,
   placement: Placement | null,
   now: number,
+  opts: { restore?: boolean } = {},
 ): BlockRow {
   const patch: Partial<typeof blocks.$inferInsert> = {
     version: row.version + 1,
     updatedAt: now,
     updatedBy: ctx.userId,
   };
+  // Clearing deleted_at also re-fires the fts.sql block trigger, which rebuilds
+  // the page's search body from its live blocks.
+  if (opts.restore) patch.deletedAt = null;
   if (block !== null) {
     patch.type = block.type;
     patch.props = JSON.stringify(block.props);
@@ -265,9 +284,18 @@ export function updateBlockRow(
  */
 export function softDeleteBlockRows(ctx: DocsCtx, view: SiblingView, rootId: string, now: number): string[] {
   const doomed: string[] = [];
+  // The visited set is not defensive padding. Without it a parent ring in the
+  // table makes this walk never terminate: it queued forever and died on
+  // `RangeError: Invalid array length` after burning 7.5 seconds of one core,
+  // on a request that could never succeed. `resolvePlacement` now refuses to
+  // create such a ring, but a row that predates that fix must still be
+  // deletable rather than able to spend a core.
+  const visited = new Set<string>();
   const queue = [rootId];
   while (queue.length > 0) {
     const id = queue.shift()!;
+    if (visited.has(id)) continue;
+    visited.add(id);
     doomed.push(id);
     for (const b of view.byId.values()) if (b.parentId === id) queue.push(b.id);
   }
