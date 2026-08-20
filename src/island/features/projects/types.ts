@@ -138,6 +138,8 @@ export interface PatchProjectBody {
   color?: string | null;
   updateCadence?: UpdateCadence;
   archived?: boolean;
+  /** Fractional key. Omit to leave the order alone (T-028). */
+  position?: string;
 }
 
 export interface Page<T> {

@@ -97,7 +97,7 @@ at ≤6 logins.
 | T-025 | Seed hand-writes project progress caches, legacy shape | done |
 | T-026 | Harden the counter-write gate (shapes, states.category) | open |
 | T-027 | Gate runner loses test counts on CI (ANSI codes) | done |
-| T-028 | Projects cannot be reordered (no position on PATCH) | open |
+| T-028 | Projects cannot be reordered (no position on PATCH) | done |
 | T-029 | PJ-01 star has no favorites endpoint | open |
 | T-030 | Issue engine scopes only by pathname (+ panel chips) | open |
 | T-031 | S-15/S-16 series endpoints (sparkline, scope line, blocked) | open |

@@ -1,9 +1,10 @@
 # T-028 : projects cannot be reordered, because the PATCH has no position
 
-status: open
+status: done
 module: M4 projects & cycles
 owns: src/lib/validation/projects.ts, src/lib/services/projects.ts, tests/api/projects*.test.ts
 depends-on: none
+assignee: claude-opus-5 session 6858dcdc, 2026-08-19
 
 > Read `planning/tickets/README.md` first (shell rules, gates, anti-stall).
 
@@ -49,3 +50,52 @@ Mirror that exactly rather than inventing a second convention.
 
 A project moved between two siblings reads back between them from
 `GET /api/projects`. All four gates green.
+
+## Work log
+
+Session `6858dcdc`, 2026-08-19. Branch `feat/t-028-project-reorder`.
+
+```
+════ GATE VERDICT ════
+PASS build  complete
+PASS check  280 files, 0 errors
+PASS test   files: 55 passed (55) | tests: 288 passed (288)
+PASS e2e    9 passed (8.6s)
+ALL GATES PASS
+```
+
+### What shipped
+
+`position` on `patchProjectSchema`, validated by `isValidKey`, and the
+matching branch in `updateProject`. Copied from the milestone convention
+rather than invented, as the ticket asked.
+
+The S-15 list drags to reorder within a status group. The drop writes a
+fractional midpoint between the drop target and its predecessor, so no sibling
+row is rewritten.
+
+### A decision the ticket did not name
+
+A drop onto a different status group is ignored rather than treated as a
+status change. Position and status are separate facts, each row already has a
+status select, and making one gesture mean two things would leave no way to
+reorder near a group boundary without risking an unintended status write.
+There is a test for the refusal.
+
+### Deliverable 3
+
+The no-reorder guard in `tests/island/features/projects/list.test.tsx` is
+gone, replaced by tests that drive the real drag. That guard was also one of
+the vacuous assertions found during the T-006 review: it asserted no PATCH was
+recorded in a test that clicked nothing.
+
+### Falsification
+
+| Break | Failure |
+|---|---|
+| Remove the `position` branch from `updateProject` | `expected [ 'Alpha', 'Beta', 'Gamma' ] to deeply equal [ 'Alpha', 'Gamma', 'Beta' ]` |
+| Allow a drop across status groups | `expected [ { …(2) } ] to deeply equal []` |
+
+The omitted-position test is the sensor for the first: a service that reset
+position on every write would still pass the reorder test alone.
+
