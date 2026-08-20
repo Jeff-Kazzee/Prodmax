@@ -176,6 +176,22 @@ export function createPage(ctx: DocsCtx, input: CreatePageInput): PageDto {
   return toPageDto(requirePage(ctx, id));
 }
 
+/**
+ * Bump a page's version and updated_at after its blocks changed.
+ *
+ * Lives here rather than in the blocks service so that every write to the
+ * `pages` table stays inside the two page modules, which
+ * tests/api/blocks-choke-point asserts. It also re-fires the fts.sql page
+ * trigger, which rebuilds the page's search body from its live blocks.
+ */
+export function touchPageAfterBlockWrite(ctx: DocsCtx, pageId: string, fromVersion: number, now: number): void {
+  currentDb()
+    .update(pages)
+    .set({ version: fromVersion + 1, updatedAt: now, updatedBy: ctx.userId })
+    .where(eq(pages.id, pageId))
+    .run();
+}
+
 export function getPage(ctx: DocsCtx, id: string): PageDto {
   return toPageDto(requirePage(ctx, id));
 }

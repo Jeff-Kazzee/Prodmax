@@ -14,13 +14,14 @@
  * exactly one implementation.
  */
 import { eq } from "drizzle-orm";
-import { blocks, pages } from "@/db/schema";
+import { blocks } from "@/db/schema";
 import { uuid7 } from "@/db/ids";
 import { currentDb } from "@/lib/api/db";
 import { HttpError } from "@/lib/api/errors";
 import { sanitizeBlock } from "@/lib/validation/blocks";
 import { MAX_BATCH_OPS, type BlockOp } from "@/lib/validation/blocks-ops";
 import { requireLivePage, workspaceMentions, type DocsCtx } from "./pages-access";
+import { touchPageAfterBlockWrite } from "./pages";
 import {
   insertBlockRow,
   readPageBlockRows,
@@ -50,15 +51,6 @@ export function listPageBlocks(ctx: DocsCtx, pageId: string): BlockDto[] {
   return readPageBlockRows(ctx, pageId).map(toBlockDto);
 }
 
-/** Bump the page that owns the blocks a write touched. */
-function touchPage(ctx: DocsCtx, pageId: string, version: number, now: number): void {
-  currentDb()
-    .update(pages)
-    .set({ version: version + 1, updatedAt: now, updatedBy: ctx.userId })
-    .where(eq(pages.id, pageId))
-    .run();
-}
-
 export interface BatchResult {
   blocks: BlockDto[];
   deleted: string[];
@@ -77,7 +69,18 @@ export interface BatchResult {
  * async one outright ("Transaction function cannot return a promise"), which
  * makes the "we awaited inside and silently lost atomicity" bug unwritable.
  */
-export function applyBlockOps(ctx: DocsCtx, pageId: string, ops: readonly BlockOp[]): BatchResult {
+export function applyBlockOps(
+  ctx: DocsCtx,
+  pageId: string,
+  ops: readonly BlockOp[],
+  /**
+   * Prefix for error details. The batch endpoint sends "ops", so a caller sees
+   * `ops[2].parentId`. The single-block endpoints send "block", because a
+   * client that posted one block never sent an `ops` array and should not be
+   * told which element of it was wrong.
+   */
+  label = "ops",
+): BatchResult {
   if (ops.length > MAX_BATCH_OPS) {
     throw new HttpError("PAYLOAD_TOO_LARGE", `A batch carries at most ${MAX_BATCH_OPS} ops`, [
       `ops: ${ops.length}`,
@@ -95,7 +98,7 @@ export function applyBlockOps(ctx: DocsCtx, pageId: string, ops: readonly BlockO
     const deleted: string[] = [];
 
     ops.forEach((op, i) => {
-      const at = `ops[${i}]`;
+      const at = label === "ops" ? `ops[${i}]` : label;
       switch (op.op) {
         case "insert": {
           const existing = live.get(op.id);
@@ -164,7 +167,7 @@ export function applyBlockOps(ctx: DocsCtx, pageId: string, ops: readonly BlockO
       }
     });
 
-    touchPage(ctx, pageId, page.version, now);
+    touchPageAfterBlockWrite(ctx, pageId, page.version, now);
     const after = readPageBlockRows(ctx, pageId);
     return {
       blocks: after.filter((r) => touched.has(r.id)).map(toBlockDto),
@@ -223,17 +226,22 @@ export interface CreateBlockInput {
 
 export function createBlock(ctx: DocsCtx, pageId: string, input: CreateBlockInput): BlockDto {
   const id = input.id ?? uuid7();
-  const result = applyBlockOps(ctx, pageId, [
-    {
-      op: "insert",
-      id,
-      type: input.type,
-      props: input.props,
-      parentId: input.parentId,
-      afterId: input.afterId,
-      beforeId: input.beforeId,
-    },
-  ]);
+  const result = applyBlockOps(
+    ctx,
+    pageId,
+    [
+      {
+        op: "insert",
+        id,
+        type: input.type,
+        props: input.props,
+        parentId: input.parentId,
+        afterId: input.afterId,
+        beforeId: input.beforeId,
+      },
+    ],
+    "block",
+  );
   const created = result.blocks.find((b) => b.id === id);
   if (created === undefined) throw new HttpError("INTERNAL", "Block was not created");
   return created;
@@ -280,7 +288,7 @@ export function patchBlock(ctx: DocsCtx, blockId: string, input: PatchBlockInput
     });
   }
   if (ops.length === 0) throw new HttpError("VALIDATION", "Nothing to update", ["body: no recognised field"]);
-  const result = applyBlockOps(ctx, pageId, ops);
+  const result = applyBlockOps(ctx, pageId, ops, "block");
   const patched = result.blocks.find((b) => b.id === blockId);
   if (patched === undefined) throw new HttpError("INTERNAL", "Block was not updated");
   return patched;
@@ -289,5 +297,5 @@ export function patchBlock(ctx: DocsCtx, blockId: string, input: PatchBlockInput
 /** DELETE /api/blocks/:id. Soft delete, children included. */
 export function deleteBlock(ctx: DocsCtx, blockId: string): { deleted: string[] } {
   const pageId = requireBlockPageId(ctx, blockId);
-  return { deleted: applyBlockOps(ctx, pageId, [{ op: "delete", id: blockId }]).deleted };
+  return { deleted: applyBlockOps(ctx, pageId, [{ op: "delete", id: blockId }], "block").deleted };
 }
