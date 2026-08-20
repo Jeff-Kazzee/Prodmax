@@ -12,6 +12,7 @@ import { requireWorkspace } from "@/lib/api/guards";
 import { parseBody } from "@/lib/api/parse";
 import { uuid7 } from "@/db/ids";
 import { generateKeyBetween } from "@/db/positions";
+import { seedTeamDefaults } from "@/lib/api/provision";
 
 type Ctx = { request: Request; url?: URL };
 
@@ -72,20 +73,32 @@ export const POST = route(async (ctx: Ctx) => {
     .map((t) => t.position)
     .sort()
     .at(-1) ?? null;
-  db.insert(teams)
-    .values({
-      id,
-      workspaceId: wsId,
-      key: body.key,
-      name: body.name,
-      description: body.description ?? null,
-      timezone: body.timezone ?? null,
-      position: generateKeyBetween(last, null),
-      createdAt: now,
-      updatedAt: now,
-    })
-    .run();
 
+  // One transaction, and the same `seedTeamDefaults` the workspace
+  // provisioner uses. This endpoint used to insert the team row alone, so
+  // every team created through the API had no workflow states and could not
+  // hold an issue: POST /issues answered "Team has no workflow states" and
+  // blamed the issue for a defect in the team (T-036). A partial failure here
+  // must not leave a stateless team behind either, which is what the
+  // transaction is for.
+  db.transaction((tx) => {
+    tx.insert(teams)
+      .values({
+        id,
+        workspaceId: wsId,
+        key: body.key,
+        name: body.name,
+        description: body.description ?? null,
+        timezone: body.timezone ?? null,
+        position: generateKeyBetween(last, null),
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    seedTeamDefaults(tx, id);
+  });
+
+  // Re-read after the transaction so the response carries default_state_id.
   const created = db.select().from(teams).where(eq(teams.id, id)).get();
   return json({ team: created }, 201);
 });

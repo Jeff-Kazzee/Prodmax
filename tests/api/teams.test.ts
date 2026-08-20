@@ -179,3 +179,100 @@ describe("labels", () => {
     expect((await bodyOf(ownerList)).data).toHaveLength(4); // nothing was created
   });
 });
+
+describe("a team created through the API is usable (T-036)", () => {
+  /**
+   * POST /api/teams returned 201 with zero workflow states, so filing an issue
+   * in the team it had just created answered "Team has no workflow states" and
+   * blamed the issue for a defect in the team. Every team after the first was
+   * dead on arrival, and any test needing two usable teams had to hand-seed
+   * states with raw SQL.
+   */
+  async function makeTeam(wsId: string, cookie: string, key = "ENG", name = "Engineering") {
+    const res = await createTeam({
+      request: apiReq("POST", `/teams?wsId=${wsId}`, { cookie, body: { key, name }, test: true }),
+    });
+    return { res, body: await bodyOf(res) };
+  }
+
+  async function statesOf(wsId: string, cookie: string, teamId: string) {
+    const res = await listStates({
+      request: apiReq("GET", `/teams/${teamId}/states?wsId=${wsId}`, { cookie }),
+      params: { id: teamId },
+    });
+    return ((await bodyOf(res)).data as Array<{ name: string; category: string; color: string | null }>).map((s) => ({
+      name: s.name,
+      category: s.category,
+      color: s.color,
+    }));
+  }
+
+  it("gets the same workflow the default team has", async () => {
+    const { wsId, teamId, ownerToken } = await env();
+    const cookie = cookieFor(ownerToken);
+    const made = await makeTeam(wsId, cookie);
+    expect(made.res.status).toBe(201);
+
+    // Compared to the default team rather than counted to five, so the two
+    // provisioning paths stay pinned to each other rather than to a literal.
+    expect(await statesOf(wsId, cookie, made.body.team.id)).toEqual(await statesOf(wsId, cookie, teamId));
+  });
+
+  it("can hold an issue, with no fixture SQL", async () => {
+    const { wsId, ownerToken } = await env();
+    const cookie = cookieFor(ownerToken);
+    const made = await makeTeam(wsId, cookie);
+
+    const { POST: createIssue } = await import("@/pages/api/issues/index");
+    const res = await createIssue({
+      request: apiReq("POST", `/issues?wsId=${wsId}`, {
+        cookie,
+        body: { teamId: made.body.team.id, title: "Files fine" },
+        test: true,
+      }),
+    });
+    expect(res.status).toBe(201);
+    const issue = (await bodyOf(res)).issue;
+    expect(issue.identifier).toBe("ENG-1");
+
+    // Lands on Todo, not merely on whatever state sorts first. Deleting the
+    // default_state_id backfill leaves this on Backlog.
+    const state = sqlite.prepare("SELECT name FROM states WHERE id = ?").get(issue.stateId) as { name: string };
+    expect(state.name).toBe("Todo");
+  });
+
+  it("points at a default state", async () => {
+    const { wsId, teamId, ownerToken } = await env();
+    const cookie = cookieFor(ownerToken);
+    const made = await makeTeam(wsId, cookie);
+
+    const nameOf = (id: string) => (sqlite.prepare("SELECT name FROM states WHERE id = ?").get(id) as { name: string }).name;
+    const created = sqlite.prepare("SELECT default_state_id AS d FROM teams WHERE id = ?").get(made.body.team.id) as { d: string | null };
+    const original = sqlite.prepare("SELECT default_state_id AS d FROM teams WHERE id = ?").get(teamId) as { d: string | null };
+
+    expect(created.d).toBeTruthy();
+    expect(nameOf(created.d!)).toBe(nameOf(original.d!));
+  });
+
+  it("leaves no team behind when the state seeding fails", async () => {
+    const { wsId, ownerToken } = await env();
+    const cookie = cookieFor(ownerToken);
+    // Force the states insert to abort part-way. Without one transaction over
+    // the whole thing, the team row commits and the workspace is left holding
+    // a team that can never be used, which is the original defect wearing a
+    // different hat.
+    sqlite.exec(
+      "CREATE TRIGGER t036_boom BEFORE INSERT ON states WHEN NEW.name = 'In Progress' BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+    );
+    try {
+      const made = await makeTeam(wsId, cookie, "BOOM", "Boom");
+      expect(made.res.status).toBe(500);
+      const left = sqlite.prepare("SELECT count(*) AS n FROM teams WHERE key = 'BOOM'").get() as { n: number };
+      expect(left.n).toBe(0);
+      const orphans = sqlite.prepare("SELECT count(*) AS n FROM states WHERE name = 'Backlog' AND team_id NOT IN (SELECT id FROM teams)").get() as { n: number };
+      expect(orphans.n).toBe(0);
+    } finally {
+      sqlite.exec("DROP TRIGGER IF EXISTS t036_boom;");
+    }
+  });
+});

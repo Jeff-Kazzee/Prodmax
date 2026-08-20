@@ -189,14 +189,6 @@ describe("permissions (§7)", () => {
     });
     expect(otherTeamRes.status).toBe(201);
     const otherTeamId = (await bodyOf(otherTeamRes)).team.id as string;
-    // POST /api/teams seeds no workflow states, so an issue cannot be filed in
-    // the team it just created (T-036). Copy the default team's states across
-    // until that lands; this fixture SQL should be deleted with it.
-    for (const s of sqlite.prepare("SELECT name, category, position, color FROM states WHERE team_id = ?").all(env.teamId) as Array<{ name: string; category: string; position: string; color: string | null }>) {
-      sqlite
-        .prepare("INSERT INTO states (id, team_id, name, category, position, color) VALUES (?,?,?,?,?,?)")
-        .run(`${otherTeamId}-${s.name}`, otherTeamId, s.name, s.category, s.position, s.color);
-    }
 
     const mine = await createIssue({
       request: apiReq("POST", `/issues?wsId=${env.wsId}`, {

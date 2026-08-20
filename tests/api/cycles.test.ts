@@ -189,9 +189,8 @@ describe("cycles scope", () => {
       request: apiReq("POST", `/teams?${q(wsId)}`, { cookie, body: { key: "ENG", name: "Engineering" }, test: true }),
     });
     const team2 = (await bodyOf(team2Res)).team;
-    sqlite
-      .prepare("INSERT INTO states (id, team_id, name, category, position) VALUES (?, ?, 'Todo', 'unstarted', 'a0')")
-      .run("st-eng-todo", team2.id);
+    // No hand-seeded state here any more: POST /teams provisions the default
+    // workflow, so an issue can be filed in a new team directly (T-036).
     const foreign = await mkIssue(cookie, wsId, team2.id);
 
     const res = await scopeReq(cookie, wsId, cycle.id, { add: [good.id, "missing-id", trashed.id, foreign.id] });

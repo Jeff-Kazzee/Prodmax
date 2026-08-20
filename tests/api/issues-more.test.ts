@@ -36,7 +36,8 @@ async function env() {
 }
 
 function seedEngTeam(wsId: string, proTeamId: string): string {
-  // POST /teams does not provision states; copy PRO workflow onto ENG for move-team tests.
+  // Built with raw SQL so the move-team tests control the state ids they assert on.
+  // POST /teams does provision states now (T-036); this is not a workaround for that.
   return sqlite.transaction(() => {
     const now = Date.now();
     sqlite
