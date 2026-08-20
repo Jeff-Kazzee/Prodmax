@@ -105,7 +105,7 @@ at ≤6 logins.
 | T-033 | `?team=` in the URL pops the new-issue modal | done |
 | T-034 | Seeded blocks do not match the §2.6 props contract | open |
 | T-035 | Trashed pages and issues stay in the search index | open |
-| T-036 | A team created through the API cannot hold an issue | open |
+| T-036 | A team created through the API cannot hold an issue | done |
 | T-037 | Spec amendments the T-007 implementation owes | done |
 | T-038 | Bookmark/embed unfurl, and search snippets | open |
 
