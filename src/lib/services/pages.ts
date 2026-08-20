@@ -380,22 +380,21 @@ export function patchPage(ctx: DocsCtx, id: string, input: PatchPageInput, expec
   if (input.icon !== undefined) patch.icon = input.icon;
   if (input.archived !== undefined) patch.archivedAt = input.archived ? Date.now() : null;
 
-  // One transaction for the whole request. The metadata UPDATE used to run
-  // outside one, so a PATCH carrying a rename and a rejected move committed the
-  // rename and still returned an error. better-sqlite3 turns the inner
-  // transaction in movePage into a SAVEPOINT, so nesting is safe.
-  return currentDb().transaction(() => {
-    // A move rewrites the same row, so folding the metadata into it keeps one
-    // UPDATE and therefore one version bump per request.
-    if (moving) return movePage(ctx, id, input, patch);
-    if (Object.keys(patch).length > 0) {
-      const now = Date.now();
-      currentDb()
-        .update(pages)
-        .set({ ...patch, version: page.version + 1, updatedAt: now, updatedBy: ctx.userId })
-        .where(eq(pages.id, page.id))
-        .run();
-    }
-    return toPageDto(requirePage(ctx, id));
-  });
+  // A PATCH that renames and moves used to be two writes: a metadata UPDATE
+  // outside any transaction, then movePage. A rejected move therefore left the
+  // rename committed, and an accepted one bumped `version` twice. Folding the
+  // metadata into the move's own UPDATE fixes both, and it is the fold rather
+  // than any surrounding transaction that does it: after it there is exactly
+  // one write on either branch, so a wrapper here would guard nothing.
+  if (moving) return movePage(ctx, id, input, patch);
+
+  if (Object.keys(patch).length > 0) {
+    const now = Date.now();
+    currentDb()
+      .update(pages)
+      .set({ ...patch, version: page.version + 1, updatedAt: now, updatedBy: ctx.userId })
+      .where(eq(pages.id, page.id))
+      .run();
+  }
+  return toPageDto(requirePage(ctx, id));
 }
