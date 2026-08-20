@@ -1,10 +1,10 @@
 # T-037 : spec amendments the T-007 implementation owes
 
-status: open
+status: done
 module: docs only (M0 spec)
 owns: planning/architecture.md
 depends-on: T-007
-assignee: none
+assignee: claude-code session 2026-08-19 (docs/t-037-spec-amendments)
 
 > Read `planning/tickets/README.md` first (shell rules, gates, anti-stall).
 
@@ -86,4 +86,45 @@ Amend §2.7's `data` row to camelCase, and note `stateId`.
 
 ## Work log
 
-(empty)
+Session 2026-08-19, branch `docs/t-037-spec-amendments`, cut from `dev` at
+`606b77f`.
+
+Three rows amended in `planning/architecture.md`, each cross-checked against
+the shipped code rather than against the ticket text:
+
+| Row | Now reads | Verified against |
+|---|---|---|
+| section 3.6 tree | `GET /api/pages/tree?wsId=&expanded=` | `src/pages/api/pages/tree.ts` |
+| section 3.6 instantiate | page clones blocks; issue returns a prefilled payload | `templates.ts:213`, `{ kind: "issue"; payload: IssueTemplateData }` |
+| section 2.7 data | camelCase, `descriptionMd`, `stateId`, `subIssues` | `issueTemplateDataSchema` in `src/lib/validation/pages-templates.ts` |
+
+Each amendment carries a one-line reason naming T-037, so a later reader sees
+why the row diverges from its neighbours rather than treating it as drift.
+
+`git diff --stat` shows `3 insertions(+), 3 deletions(-)`, so the file's CRLF
+line endings survived. No em dashes added.
+
+Docs only, so no code changed. Gates run anyway:
+
+```
+════ GATE VERDICT ════
+PASS build  complete
+PASS check  314 files, 0 errors
+PASS test   files: 64 passed (64) | tests: 406 passed (406)
+PASS e2e    9 passed (12.2s)
+ALL GATES PASS
+```
+
+Exit code 0, counts parsed. Run on the merged `dev` at `606b77f`. `git diff dev
+--name-only` on this branch lists only `planning/**`, so the compiled tree is
+byte-identical to the one that produced this block and it is the evidence for
+both.
+
+### Not done
+
+`?types=comment` still returns VALIDATION rather than an empty result. The
+divergence is recorded in T-007's work log and is defensible (section 2.10
+folds comment bodies into the issue body, so a comment type could return
+nothing), but ux-spec section 4.19's chip row does show a Comments chip. That
+is a product question for T-008's search screen, not a spec typo, so it is left
+open rather than amended away here.
