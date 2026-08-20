@@ -102,7 +102,7 @@ at ≤6 logins.
 | T-030 | Issue engine scopes only by pathname (+ panel chips) | open |
 | T-031 | S-15/S-16 series endpoints (sparkline, scope line, blocked) | open |
 | T-032 | No GET for a single cycle | open |
-| T-033 | `?team=` in the URL pops the new-issue modal | open |
+| T-033 | `?team=` in the URL pops the new-issue modal | done |
 
 Parallelism note: tickets in different chains are file-disjoint per
 architecture §8 and MAY run in parallel (e.g. the T-007…T-010 docs chain vs

@@ -131,7 +131,7 @@ export function CycleHeader({
           {others.map((c) => (
             <Link
               key={c.id}
-              to={`/cycle/${c.id}${team ? `?cycleTeam=${encodeURIComponent(team.key)}` : ""}`}
+              to={`/cycle/${c.id}${team ? `?team=${encodeURIComponent(team.key)}` : ""}`}
               className="rounded-sm border px-1.5 py-0.5 font-mono text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               {cycleName(c)}
