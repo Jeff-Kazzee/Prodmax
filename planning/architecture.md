@@ -411,7 +411,7 @@ richText[] = [{type: 'text', text, marks: {bold, italic, strike, code, link?} | 
 | team_id | TEXT NULL FK teams | issue templates may be team-scoped |
 | kind | TEXT CHECK ('issue','page') | |
 | name / description | TEXT | |
-| data | TEXT NOT NULL | json — issue: {title?, description_md?, priority?, state?, labels[], sub_issues[{title,…}]}; page: {icon?, blocks[{type, props, children[]}]} |
+| data | TEXT NOT NULL | json, camelCase at the API boundary like every other DTO. Issue: {title?, descriptionMd?, priority?, stateId?, labels[], subIssues[{title,…}]}; page: {icon?, blocks[{type, props, children[]}]}. Amended T-037: `stateId` because the value is a state id, not a name |
 | position | TEXT | |
 | recurrence | TEXT NULL | json {freq:'daily'|'weekly'|'monthly', every:int, next_run_at} (FM-054) |
 | usage_count | INTEGER DEFAULT 0 | |
@@ -616,7 +616,7 @@ Maintained by service-layer write hooks (issue title/description/comment create-
 ### 3.6 Pages, blocks, templates, search (M5 + M1 search)
 | Method | Path | Notes |
 |---|---|---|
-| GET | /api/workspaces/:wsId/pages/tree | sidebar tree (visible nodes only, path-indexed) |
+| GET | /api/pages/tree?wsId=&expanded= | sidebar tree (visible nodes only, path-indexed); `expanded` is the CSV of open node ids, so the query is O(visible). Amended T-037: this was the only path-embedded wsId in section 3, and the path form lands in an M1-owned file the M5 ticket does not own (section 8 overlap rule) |
 | GET/POST | /api/pages?wsId= | POST {parentId?, title} |
 | GET/PATCH/DELETE | /api/pages/:id | DELETE → 30-d trash; restore = POST /api/pages/:id/restore |
 | GET | /api/pages/:pageId/blocks | **single query** (page_id index) returning full ordered tree |
@@ -626,7 +626,7 @@ Maintained by service-layer write hooks (issue title/description/comment create-
 | POST | /api/pages/:pageId/blocks/batch | batch: [{op:'insert'|'move'|'update'|'delete', …}] one transaction (paste, drag multi) |
 | GET/POST | /api/templates?wsId=&kind= | |
 | PATCH/DELETE | /api/templates/:id | |
-| POST | /api/templates/:id/instantiate | issue → new issue; page → new page with block clone |
+| POST | /api/templates/:id/instantiate | page → new page with block clone; issue → a **prefilled issue payload** the client posts to `/api/issues`. Amended T-037: creating the issue here would bypass the `runIssueWrite` choke point, so no project counter would move and section 9 says nothing self-heals |
 | GET | /api/search?q=&types=issue,page,project,comment | FTS5 unified (FM-042) |
 
 ### 3.7 Notifications, activity, SSE, presence (M8)
