@@ -2,7 +2,7 @@
  * Pages API: the sidebar tree, subtree move under a depth cap with cycle
  * detection, the 30-day trash and its restore cohort, and the §7 guest gate.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type Database from "better-sqlite3";
 import { GET as listPages, POST as createPage } from "@/pages/api/pages/index";
 import { GET as getTree } from "@/pages/api/pages/tree";
@@ -190,13 +190,26 @@ describe("trash and restore (FM-050)", () => {
   it("gives two deletes in the same millisecond different stamps", async () => {
     const one = await newPage("one");
     const two = await newPage("two");
-    for (const id of [one, two]) {
-      await deletePage({
-        request: apiReq("DELETE", `/pages/${id}?wsId=${env.wsId}`, { cookie: env.cookie, test: true }),
-        params: { id },
-      });
+
+    // The clock is frozen for both deletes. Without this the two calls land in
+    // different milliseconds on their own, `Date.now()` alone would separate
+    // them, and the test would pass against an allocator that does nothing.
+    // Freezing it is what makes the assertion able to fail.
+    const frozen = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(frozen);
+    try {
+      for (const id of [one, two]) {
+        await deletePage({
+          request: apiReq("DELETE", `/pages/${id}?wsId=${env.wsId}`, { cookie: env.cookie, test: true }),
+          params: { id },
+        });
+      }
+    } finally {
+      clock.mockRestore();
     }
-    expect(rowOf(one).deleted_at).not.toBe(rowOf(two).deleted_at);
+
+    expect(rowOf(one).deleted_at).toBe(frozen);
+    expect(rowOf(two).deleted_at).toBe(frozen + 1);
   });
 
   it("reparents a restored page to the root when its parent is still trashed", async () => {
