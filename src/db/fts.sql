@@ -1,6 +1,19 @@
 -- Prodmax unified FTS5 index (architecture §2.10) + sync triggers.
 -- Applied idempotently by scripts/migrate.mjs and tests/db createTestDb().
 --
+-- Every trigger is DROPped before it is CREATEd, and none carries
+-- `IF NOT EXISTS`. That guard is a NAME check: it skips whatever the body
+-- says, so editing a body here would never reach a database that already had
+-- the trigger, and the fix would ship without taking effect. Observed against
+-- the committed DDL before this file was changed (T-035).
+--
+-- Liveness invariant: search_fts holds a row for an issue, page or project
+-- exactly while its `deleted_at IS NULL`. That needs a guard in three places
+-- and it is easy to see only the first. The entity triggers keep a trashed row
+-- out. The comment and block triggers rebuild their PARENT, so without a
+-- predicate they put a dead parent back: deleting a comment on a trashed issue
+-- re-indexed the issue, and that path is reachable through the API today.
+--
 -- Content policy (§2.10):
 --   issues   → title + description_md + issue comments appended into body
 --   pages    → title + concatenated block `text`
@@ -20,31 +33,36 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
 
 -- ---------------------------------------------------------------- issues
 
-CREATE TRIGGER IF NOT EXISTS fts_issues_ai AFTER INSERT ON issues BEGIN
+DROP TRIGGER IF EXISTS fts_issues_ai;
+CREATE TRIGGER fts_issues_ai AFTER INSERT ON issues BEGIN
   INSERT INTO search_fts(title, body, entity_type, entity_id, workspace_id, updated_at)
-  VALUES (new.title, COALESCE(new.description_md, ''), 'issue', new.id, new.workspace_id, new.updated_at);
+  SELECT new.title, COALESCE(new.description_md, ''), 'issue', new.id, new.workspace_id, new.updated_at
+  WHERE new.deleted_at IS NULL;
 END;
 
-CREATE TRIGGER IF NOT EXISTS fts_issues_au AFTER UPDATE OF title, description_md, workspace_id, updated_at, deleted_at ON issues BEGIN
+DROP TRIGGER IF EXISTS fts_issues_au;
+CREATE TRIGGER fts_issues_au AFTER UPDATE OF title, description_md, workspace_id, updated_at, deleted_at ON issues BEGIN
   DELETE FROM search_fts WHERE entity_type = 'issue' AND entity_id = new.id;
   INSERT INTO search_fts(title, body, entity_type, entity_id, workspace_id, updated_at)
-  VALUES (
+  SELECT
     new.title,
     COALESCE(new.description_md, '') || COALESCE((
       SELECT ' ' || group_concat(c.body_md, ' ') FROM comments c
       WHERE c.entity_type = 'issue' AND c.entity_id = new.id AND c.deleted_at IS NULL
     ), ''),
     'issue', new.id, new.workspace_id, new.updated_at
-  );
+  WHERE new.deleted_at IS NULL;
 END;
 
-CREATE TRIGGER IF NOT EXISTS fts_issues_ad AFTER DELETE ON issues BEGIN
+DROP TRIGGER IF EXISTS fts_issues_ad;
+CREATE TRIGGER fts_issues_ad AFTER DELETE ON issues BEGIN
   DELETE FROM search_fts WHERE entity_type = 'issue' AND entity_id = old.id;
 END;
 
 -- ------------------------------------------------- comments (issue bodies)
 
-CREATE TRIGGER IF NOT EXISTS fts_issue_comments_ai AFTER INSERT ON comments WHEN new.entity_type = 'issue' BEGIN
+DROP TRIGGER IF EXISTS fts_issue_comments_ai;
+CREATE TRIGGER fts_issue_comments_ai AFTER INSERT ON comments WHEN new.entity_type = 'issue' BEGIN
   DELETE FROM search_fts WHERE entity_type = 'issue' AND entity_id = new.entity_id;
   INSERT INTO search_fts(title, body, entity_type, entity_id, workspace_id, updated_at)
   SELECT i.title,
@@ -53,10 +71,11 @@ CREATE TRIGGER IF NOT EXISTS fts_issue_comments_ai AFTER INSERT ON comments WHEN
            WHERE c.entity_type = 'issue' AND c.entity_id = i.id AND c.deleted_at IS NULL
          ), ''),
          'issue', i.id, i.workspace_id, i.updated_at
-  FROM issues i WHERE i.id = new.entity_id;
+  FROM issues i WHERE i.id = new.entity_id AND i.deleted_at IS NULL;
 END;
 
-CREATE TRIGGER IF NOT EXISTS fts_issue_comments_au AFTER UPDATE OF body_md, deleted_at, entity_id, entity_type ON comments WHEN new.entity_type = 'issue' BEGIN
+DROP TRIGGER IF EXISTS fts_issue_comments_au;
+CREATE TRIGGER fts_issue_comments_au AFTER UPDATE OF body_md, deleted_at, entity_id, entity_type ON comments WHEN new.entity_type = 'issue' BEGIN
   DELETE FROM search_fts WHERE entity_type = 'issue' AND entity_id IN (new.entity_id, old.entity_id);
   INSERT INTO search_fts(title, body, entity_type, entity_id, workspace_id, updated_at)
   SELECT i.title,
@@ -65,10 +84,11 @@ CREATE TRIGGER IF NOT EXISTS fts_issue_comments_au AFTER UPDATE OF body_md, dele
            WHERE c.entity_type = 'issue' AND c.entity_id = i.id AND c.deleted_at IS NULL
          ), ''),
          'issue', i.id, i.workspace_id, i.updated_at
-  FROM issues i WHERE i.id = new.entity_id;
+  FROM issues i WHERE i.id = new.entity_id AND i.deleted_at IS NULL;
 END;
 
-CREATE TRIGGER IF NOT EXISTS fts_issue_comments_ad AFTER DELETE ON comments WHEN old.entity_type = 'issue' BEGIN
+DROP TRIGGER IF EXISTS fts_issue_comments_ad;
+CREATE TRIGGER fts_issue_comments_ad AFTER DELETE ON comments WHEN old.entity_type = 'issue' BEGIN
   DELETE FROM search_fts WHERE entity_type = 'issue' AND entity_id = old.entity_id;
   INSERT INTO search_fts(title, body, entity_type, entity_id, workspace_id, updated_at)
   SELECT i.title,
@@ -77,77 +97,90 @@ CREATE TRIGGER IF NOT EXISTS fts_issue_comments_ad AFTER DELETE ON comments WHEN
            WHERE c.entity_type = 'issue' AND c.entity_id = i.id AND c.deleted_at IS NULL
          ), ''),
          'issue', i.id, i.workspace_id, i.updated_at
-  FROM issues i WHERE i.id = old.entity_id;
+  FROM issues i WHERE i.id = old.entity_id AND i.deleted_at IS NULL;
 END;
 
 -- ------------------------------------------------------------------ pages
 
-CREATE TRIGGER IF NOT EXISTS fts_pages_ai AFTER INSERT ON pages BEGIN
+DROP TRIGGER IF EXISTS fts_pages_ai;
+CREATE TRIGGER fts_pages_ai AFTER INSERT ON pages BEGIN
   INSERT INTO search_fts(title, body, entity_type, entity_id, workspace_id, updated_at)
   SELECT new.title, COALESCE((
     SELECT group_concat(b.text, ' ') FROM blocks b
     WHERE b.page_id = new.id AND b.deleted_at IS NULL
-  ), ''), 'page', new.id, new.workspace_id, new.updated_at;
+  ), ''), 'page', new.id, new.workspace_id, new.updated_at
+  WHERE new.deleted_at IS NULL;
 END;
 
-CREATE TRIGGER IF NOT EXISTS fts_pages_au AFTER UPDATE OF title, workspace_id, updated_at, deleted_at ON pages BEGIN
+DROP TRIGGER IF EXISTS fts_pages_au;
+CREATE TRIGGER fts_pages_au AFTER UPDATE OF title, workspace_id, updated_at, deleted_at ON pages BEGIN
   DELETE FROM search_fts WHERE entity_type = 'page' AND entity_id = new.id;
   INSERT INTO search_fts(title, body, entity_type, entity_id, workspace_id, updated_at)
   SELECT new.title, COALESCE((
     SELECT group_concat(b.text, ' ') FROM blocks b
     WHERE b.page_id = new.id AND b.deleted_at IS NULL
-  ), ''), 'page', new.id, new.workspace_id, new.updated_at;
+  ), ''), 'page', new.id, new.workspace_id, new.updated_at
+  WHERE new.deleted_at IS NULL;
 END;
 
-CREATE TRIGGER IF NOT EXISTS fts_pages_ad AFTER DELETE ON pages BEGIN
+DROP TRIGGER IF EXISTS fts_pages_ad;
+CREATE TRIGGER fts_pages_ad AFTER DELETE ON pages BEGIN
   DELETE FROM search_fts WHERE entity_type = 'page' AND entity_id = old.id;
 END;
 
 -- ------------------------------------------- blocks (page body maintenance)
 
-CREATE TRIGGER IF NOT EXISTS fts_blocks_ai AFTER INSERT ON blocks BEGIN
+DROP TRIGGER IF EXISTS fts_blocks_ai;
+CREATE TRIGGER fts_blocks_ai AFTER INSERT ON blocks BEGIN
   DELETE FROM search_fts WHERE entity_type = 'page' AND entity_id = new.page_id;
   INSERT INTO search_fts(title, body, entity_type, entity_id, workspace_id, updated_at)
   SELECT p.title, COALESCE((
     SELECT group_concat(b.text, ' ') FROM blocks b
     WHERE b.page_id = p.id AND b.deleted_at IS NULL
   ), ''), 'page', p.id, p.workspace_id, p.updated_at
-  FROM pages p WHERE p.id = new.page_id;
+  FROM pages p WHERE p.id = new.page_id AND p.deleted_at IS NULL;
 END;
 
-CREATE TRIGGER IF NOT EXISTS fts_blocks_au AFTER UPDATE OF text, page_id, workspace_id, deleted_at ON blocks BEGIN
+DROP TRIGGER IF EXISTS fts_blocks_au;
+CREATE TRIGGER fts_blocks_au AFTER UPDATE OF text, page_id, workspace_id, deleted_at ON blocks BEGIN
   DELETE FROM search_fts WHERE entity_type = 'page' AND entity_id IN (new.page_id, old.page_id);
   INSERT INTO search_fts(title, body, entity_type, entity_id, workspace_id, updated_at)
   SELECT p.title, COALESCE((
     SELECT group_concat(b.text, ' ') FROM blocks b
     WHERE b.page_id = p.id AND b.deleted_at IS NULL
   ), ''), 'page', p.id, p.workspace_id, p.updated_at
-  FROM pages p WHERE p.id IN (new.page_id, old.page_id);
+  FROM pages p WHERE p.id IN (new.page_id, old.page_id) AND p.deleted_at IS NULL;
 END;
 
-CREATE TRIGGER IF NOT EXISTS fts_blocks_ad AFTER DELETE ON blocks BEGIN
+DROP TRIGGER IF EXISTS fts_blocks_ad;
+CREATE TRIGGER fts_blocks_ad AFTER DELETE ON blocks BEGIN
   DELETE FROM search_fts WHERE entity_type = 'page' AND entity_id = old.page_id;
   INSERT INTO search_fts(title, body, entity_type, entity_id, workspace_id, updated_at)
   SELECT p.title, COALESCE((
     SELECT group_concat(b.text, ' ') FROM blocks b
     WHERE b.page_id = p.id AND b.deleted_at IS NULL
   ), ''), 'page', p.id, p.workspace_id, p.updated_at
-  FROM pages p WHERE p.id = old.page_id;
+  FROM pages p WHERE p.id = old.page_id AND p.deleted_at IS NULL;
 END;
 
 -- --------------------------------------------------------------- projects
 
-CREATE TRIGGER IF NOT EXISTS fts_projects_ai AFTER INSERT ON projects BEGIN
+DROP TRIGGER IF EXISTS fts_projects_ai;
+CREATE TRIGGER fts_projects_ai AFTER INSERT ON projects BEGIN
   INSERT INTO search_fts(title, body, entity_type, entity_id, workspace_id, updated_at)
-  VALUES (new.name, COALESCE(new.description_md, ''), 'project', new.id, new.workspace_id, new.updated_at);
+  SELECT new.name, COALESCE(new.description_md, ''), 'project', new.id, new.workspace_id, new.updated_at
+  WHERE new.deleted_at IS NULL;
 END;
 
-CREATE TRIGGER IF NOT EXISTS fts_projects_au AFTER UPDATE OF name, description_md, workspace_id, updated_at, deleted_at ON projects BEGIN
+DROP TRIGGER IF EXISTS fts_projects_au;
+CREATE TRIGGER fts_projects_au AFTER UPDATE OF name, description_md, workspace_id, updated_at, deleted_at ON projects BEGIN
   DELETE FROM search_fts WHERE entity_type = 'project' AND entity_id = new.id;
   INSERT INTO search_fts(title, body, entity_type, entity_id, workspace_id, updated_at)
-  VALUES (new.name, COALESCE(new.description_md, ''), 'project', new.id, new.workspace_id, new.updated_at);
+  SELECT new.name, COALESCE(new.description_md, ''), 'project', new.id, new.workspace_id, new.updated_at
+  WHERE new.deleted_at IS NULL;
 END;
 
-CREATE TRIGGER IF NOT EXISTS fts_projects_ad AFTER DELETE ON projects BEGIN
+DROP TRIGGER IF EXISTS fts_projects_ad;
+CREATE TRIGGER fts_projects_ad AFTER DELETE ON projects BEGIN
   DELETE FROM search_fts WHERE entity_type = 'project' AND entity_id = old.id;
 END;
