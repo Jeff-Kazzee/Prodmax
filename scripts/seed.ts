@@ -237,8 +237,10 @@ export function seedDemo(sqlite: Sqlite): SeedCounts {
     color: "#f5a524",
     brief_page_id: null,
     position: rebalanceKeys(2)[0],
-    progress_cache: 14,
-    progress_points_cache: JSON.stringify({ done: 2, total: 14 }),
+    // Derived at the end of this function by repairAllProjects, from the
+    // issues actually seeded. See the note there.
+    progress_cache: 0,
+    progress_points_cache: null,
     update_cadence: "weekly",
     archived_at: null,
     deleted_at: null,
@@ -257,8 +259,8 @@ export function seedDemo(sqlite: Sqlite): SeedCounts {
     color: "#9b5de5",
     brief_page_id: null,
     position: rebalanceKeys(2)[1],
-    progress_cache: 29,
-    progress_points_cache: JSON.stringify({ done: 2, total: 7 }),
+    progress_cache: 0,
+    progress_points_cache: null,
     update_cadence: "off",
     archived_at: null,
     deleted_at: null,
@@ -297,7 +299,11 @@ export function seedDemo(sqlite: Sqlite): SeedCounts {
     ends_at: ago(16),
     status: "completed",
     closed_at: ago(16),
-    stats_snapshot: JSON.stringify({ completed: 3, carried: 2, points: 4 }),
+    // Filled in below from the issues that end up on this cycle. The shape
+    // `parseStats` accepts is {scope:{issues,points}, completed:{issues,points}};
+    // this row used to carry {completed,carried,points}, which parses to zeros,
+    // so the closed cycle rendered as one that did nothing.
+    stats_snapshot: null,
     created_at: ago(30),
   });
   insert(sqlite, "cycles", {
@@ -628,6 +634,84 @@ export function seedDemo(sqlite: Sqlite): SeedCounts {
       created_at: ago(a.daysAgo),
     });
   }
+
+  /* ------------------------------------------- derived caches (T-025) */
+
+  /**
+   * Derive the materialized caches instead of typing them in beside the
+   * inserts, which is what this seed used to do.
+   *
+   * Two defects came from that. The numbers drifted from the rows they claim
+   * to summarize, and reads never recompute (§9), so the demo bench served
+   * wrong figures until something happened to write an issue. And the shape
+   * was the legacy two-field one, which `parseProgressPoints` rejects, so
+   * every seeded project started in the degraded state the UI honestly renders
+   * as "counts unavailable".
+   *
+   * The aggregate is raw SQL rather than a call to `repairAllProjects`,
+   * because node runs this file directly and cannot resolve the `@/` alias
+   * that the services layer imports through. `tests/api/projects-progress-seed`
+   * closes that gap from the other side: it runs the real service over a
+   * freshly seeded database and requires it to produce exactly these numbers,
+   * so the two implementations are pinned to each other.
+   *
+   * The counted set is the §9 rule: live issues on the project whose state
+   * category is not canceled.
+   */
+  const projectRows = sqlite.prepare(`SELECT id FROM projects WHERE workspace_id = ?`).all(wsId) as Array<{ id: string }>;
+  const aggregate = sqlite.prepare(
+    `SELECT COUNT(*) AS issuesTotal,
+            COALESCE(SUM(CASE WHEN s.category = 'completed' THEN 1 ELSE 0 END), 0) AS issuesDone,
+            COALESCE(SUM(COALESCE(i.estimate, 0)), 0) AS total,
+            COALESCE(SUM(CASE WHEN s.category = 'completed' THEN COALESCE(i.estimate, 0) ELSE 0 END), 0) AS done
+       FROM issues i JOIN states s ON s.id = i.state_id
+      WHERE i.workspace_id = ? AND i.project_id = ? AND i.deleted_at IS NULL AND s.category != 'canceled'`,
+  );
+  const writeProgress = sqlite.prepare(
+    `UPDATE projects SET progress_cache = ?, progress_points_cache = ? WHERE id = ?`,
+  );
+  for (const project of projectRows) {
+    const p = aggregate.get(wsId, project.id) as {
+      issuesTotal: number;
+      issuesDone: number;
+      total: number;
+      done: number;
+    };
+    const percent = p.issuesTotal === 0 ? 0 : Math.round((100 * p.issuesDone) / p.issuesTotal);
+    writeProgress.run(percent, JSON.stringify(p), project.id);
+  }
+
+  /**
+   * The closed cycle's frozen snapshot was the same class of defect: a
+   * hand-written cache in a shape the parser rejects. It carried
+   * {completed, carried, points} where `parseStats` wants
+   * {scope:{issues,points}, completed:{issues,points}}, so it parsed to zeros
+   * and the closed cycle rendered as one that did nothing.
+   */
+  const cycleStats = sqlite
+    .prepare(
+      `SELECT COUNT(*) AS scopeIssues,
+              COALESCE(SUM(COALESCE(i.estimate, 0)), 0) AS scopePoints,
+              COALESCE(SUM(CASE WHEN s.category = 'completed' THEN 1 ELSE 0 END), 0) AS doneIssues,
+              COALESCE(SUM(CASE WHEN s.category = 'completed' THEN COALESCE(i.estimate, 0) ELSE 0 END), 0) AS donePoints
+         FROM issues i JOIN states s ON s.id = i.state_id
+        WHERE i.cycle_id = ? AND i.deleted_at IS NULL AND s.category != 'canceled'`,
+    )
+    .get(cycles.completed) as {
+    scopeIssues: number;
+    scopePoints: number;
+    doneIssues: number;
+    donePoints: number;
+  };
+  sqlite
+    .prepare(`UPDATE cycles SET stats_snapshot = ? WHERE id = ?`)
+    .run(
+      JSON.stringify({
+        scope: { issues: cycleStats.scopeIssues, points: cycleStats.scopePoints },
+        completed: { issues: cycleStats.doneIssues, points: cycleStats.donePoints },
+      }),
+      cycles.completed,
+    );
 
   /* -------------------------------------------------- FTS reindex & out */
   reindexFts(sqlite);
