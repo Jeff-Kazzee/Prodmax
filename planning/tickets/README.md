@@ -103,6 +103,8 @@ at ≤6 logins.
 | T-031 | S-15/S-16 series endpoints (sparkline, scope line, blocked) | open |
 | T-032 | No GET for a single cycle | open |
 | T-033 | `?team=` in the URL pops the new-issue modal | done |
+| T-034 | Seeded blocks do not match the §2.6 props contract | open |
+| T-035 | Trashed pages and issues stay in the search index | open |
 
 Parallelism note: tickets in different chains are file-disjoint per
 architecture §8 and MAY run in parallel (e.g. the T-007…T-010 docs chain vs
