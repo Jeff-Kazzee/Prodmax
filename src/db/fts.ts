@@ -32,9 +32,28 @@ export function ftsDdl(): string {
   return _ddl;
 }
 
-/** Idempotently create the FTS virtual table and sync triggers. */
+/**
+ * Idempotently create the FTS virtual table and sync triggers, then drop any
+ * index row with no live entity behind it.
+ *
+ * The prune is not belt-and-braces. Every trigger in fts.sql is dropped and
+ * recreated, so an existing database does pick up the new bodies, but the rows
+ * the OLD bodies already wrote survive that swap untouched. A page trashed
+ * before this fix would stay searchable forever, because nothing updates it
+ * again. Observed on a database built from the previous DDL.
+ *
+ * `NOT EXISTS` rather than `NOT IN`, so the result does not depend on a NOT
+ * NULL declared in a file this module does not own.
+ */
 export function applyFtsSchema(sqlite: SqliteDb): void {
   sqlite.exec(ftsDdl());
+  sqlite.exec(`
+    DELETE FROM search_fts WHERE entity_type = 'issue' AND NOT EXISTS (
+      SELECT 1 FROM issues t WHERE t.id = search_fts.entity_id AND t.deleted_at IS NULL);
+    DELETE FROM search_fts WHERE entity_type = 'page' AND NOT EXISTS (
+      SELECT 1 FROM pages t WHERE t.id = search_fts.entity_id AND t.deleted_at IS NULL);
+    DELETE FROM search_fts WHERE entity_type = 'project' AND NOT EXISTS (
+      SELECT 1 FROM projects t WHERE t.id = search_fts.entity_id AND t.deleted_at IS NULL);`);
 }
 
 export interface SearchHit {
@@ -113,7 +132,10 @@ export function searchWorkspace(sqlite: SqliteDb, opts: SearchOptions): SearchHi
 
 /**
  * Rebuild the index from scratch (disaster recovery, bulk imports).
- * Mirrors the trigger bodies — keep both in sync with fts.sql.
+ *
+ * Mirrors the trigger bodies in fts.sql, including their `deleted_at IS NULL`
+ * predicate. Keep both in sync: a rebuild that re-adds trashed rows undoes the
+ * triggers' work in a single statement.
  */
 export function reindexFts(sqlite: SqliteDb): void {
   sqlite.exec("DELETE FROM search_fts;");
@@ -125,18 +147,18 @@ export function reindexFts(sqlite: SqliteDb): void {
              WHERE c.entity_type = 'issue' AND c.entity_id = i.id AND c.deleted_at IS NULL
            ), ''),
            'issue', i.id, i.workspace_id, i.updated_at
-    FROM issues i;`);
+    FROM issues i WHERE i.deleted_at IS NULL;`);
   sqlite.exec(`
     INSERT INTO search_fts(title, body, entity_type, entity_id, workspace_id, updated_at)
     SELECT p.title, COALESCE((
       SELECT group_concat(b.text, ' ') FROM blocks b
       WHERE b.page_id = p.id AND b.deleted_at IS NULL
     ), ''), 'page', p.id, p.workspace_id, p.updated_at
-    FROM pages p;`);
+    FROM pages p WHERE p.deleted_at IS NULL;`);
   sqlite.exec(`
     INSERT INTO search_fts(title, body, entity_type, entity_id, workspace_id, updated_at)
     SELECT pr.name, COALESCE(pr.description_md, ''), 'project', pr.id, pr.workspace_id, pr.updated_at
-    FROM projects pr;`);
+    FROM projects pr WHERE pr.deleted_at IS NULL;`);
 }
 
 /** Row count of the FTS index (diagnostics + tests). */

@@ -119,10 +119,10 @@ describe("ranking", () => {
 
 describe("liveness", () => {
   /**
-   * The FTS triggers in src/db/fts.sql re-insert a page row on a `deleted_at`
-   * update, so the index keeps trashed pages. That file is outside T-007's
-   * owns list; the containment is the visibility pass in the search service,
-   * and T-035 carries the trigger fix.
+   * Liveness is held at two layers, and both are asserted: the trigger keeps a
+   * trashed entity out of the index (T-035), and the search service re-resolves
+   * every hit against its base table, which it must do anyway for the section 7
+   * permission filter the index cannot express.
    */
   it("hides a trashed page even though the index still holds it", async () => {
     const page = await mkPage("Runbook for payment incidents");
@@ -135,15 +135,16 @@ describe("liveness", () => {
     });
     expect((await query("payment")).body.data).toHaveLength(0);
 
-    // The tripwire for T-035: this asserts the known trigger behaviour as a
-    // fact. When the triggers are fixed, this line fails and should be
-    // deleted; the visibility pass above stays.
+    // Two layers, asserted separately (T-035). The API assertion above proves
+    // the service-side visibility pass. This proves the trigger, which that
+    // pass would otherwise mask: with the guard removed from fts_pages_au the
+    // row is back in the index and only this line notices.
     const stillIndexed = (
       sqlite
         .prepare("SELECT count(*) n FROM search_fts WHERE entity_type = 'page' AND entity_id = ?")
         .get(page) as { n: number }
     ).n;
-    expect(stillIndexed).toBe(1);
+    expect(stillIndexed).toBe(0);
   });
 
   it("returns a restored page again", async () => {

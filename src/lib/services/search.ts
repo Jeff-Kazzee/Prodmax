@@ -8,12 +8,12 @@
  *   their issues to their own teams. `search_fts` has no team_id column, so
  *   the team rule cannot be expressed in the index at all.
  *
- *   Liveness. The page, issue and project update triggers in src/db/fts.sql
- *   fire on `deleted_at` but re-INSERT the row unconditionally, so a trashed
- *   entity stays in the index. Observed, not inferred: after soft-deleting a
- *   page and an issue, both are still returned by a MATCH. That file is
- *   M1-owned and outside this ticket's owns list, so the fix is filed as
- *   T-035 and contained here.
+ *   Liveness. The triggers keep a trashed entity out of the index (T-035), and
+ *   this pass re-checks it anyway. That is not redundancy for its own sake: the
+ *   liveness predicate rides in the same `and(...)` as the permission filter,
+ *   so dropping it would mean rewriting three where-clauses to remove one
+ *   condition each, and the index would become the only thing standing between
+ *   a trashed page and a search result.
  *
  * So every candidate is re-resolved against its base table, which is also the
  * authoritative title: the index can be stale, the row cannot. That costs at
