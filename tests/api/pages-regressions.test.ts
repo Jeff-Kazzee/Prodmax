@@ -203,23 +203,31 @@ describe("list endpoints paginate (§3, binding)", () => {
 });
 
 describe("the sidebar tree costs O(visible), not O(workspace)", () => {
-  it("does not grow its page statements as unexpanded pages are added", async () => {
+  it("constrains every page query to the nodes it will return", async () => {
     const root = await newPage("root");
     for (let i = 0; i < 3; i++) await newPage(`hidden${i}`, root);
-    const small = await recordStatements(sqlite, () =>
-      getTree({ request: apiReq("GET", `/pages/tree?wsId=${env.wsId}`, { cookie: env.cookie }) }),
-    );
-
-    // Twenty more pages that the collapsed tree must never look at.
     const other = await newPage("other");
     for (let i = 0; i < 20; i++) await newPage(`deep${i}`, other);
-    const large = await recordStatements(sqlite, () =>
+
+    const { result, sql } = await recordStatements(sqlite, () =>
       getTree({ request: apiReq("GET", `/pages/tree?wsId=${env.wsId}`, { cookie: env.cookie }) }),
     );
+    expect((await bodyOf(result)).data).toHaveLength(2);
 
-    expect(touching("pages", large.sql)).toHaveLength(touching("pages", small.sql).length);
-    // And the response really is only the roots.
-    expect((await bodyOf(large.result)).data).toHaveLength(2);
+    // Statement COUNT cannot catch this: the unscoped version also issued two.
+    // What distinguishes them is the shape. The hasChildren query used to ask
+    // the whole workspace which parents have children, which is O(all live
+    // pages) behind an O(visible) response. Every page statement here must
+    // constrain parent_id.
+    const onPages = touching("pages", sql).filter((s) => /^\s*select/i.test(s));
+    expect(onPages.length).toBeGreaterThan(0);
+    for (const statement of onPages) {
+      // The WHERE clause specifically. `SELECT DISTINCT parent_id ...` carries
+      // the column name in its projection, so matching the whole statement
+      // passed even against the unscoped query this test exists to catch.
+      const where = statement.split(/\bwhere\b/i)[1] ?? "";
+      expect(where, `page query not scoped by parent: ${statement}`).toMatch(/parent_id/i);
+    }
   });
 });
 
