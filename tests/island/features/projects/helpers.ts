@@ -52,6 +52,7 @@ export function projectFixture(over: Partial<ProjectDto> = {}): ProjectDto {
     createdAt: 1,
     updatedAt: 2,
     lastUpdateAt: null,
+    favorited: false,
     ...over,
   };
 }

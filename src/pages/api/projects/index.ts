@@ -10,13 +10,14 @@ type Ctx = { request: Request };
 
 export const GET = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
-  requireWorkspace(ctx.request, wsId);
-  return json({ data: listProjects(wsId, ctx.request), nextCursor: null });
+  // The actor is needed because a star is per-user (T-029).
+  const { member } = requireWorkspace(ctx.request, wsId);
+  return json({ data: listProjects(wsId, ctx.request, member.userId), nextCursor: null });
 });
 
 export const POST = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
-  requireWorkspace(ctx.request, wsId, "member");
+  const { member } = requireWorkspace(ctx.request, wsId, "member");
   const body = await parseBody(ctx.request, createProjectSchema);
-  return json({ project: createProject(wsId, body) }, 201);
+  return json({ project: createProject(wsId, member.userId, body) }, 201);
 });

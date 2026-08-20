@@ -402,6 +402,35 @@ export const projectUpdates = sqliteTable("project_updates", {
   check("project_updates_health_check", sql`health IN ('on_track','at_risk','off_track')`),
 ]);
 
+/**
+ * Per-user favorites (T-029).
+ *
+ * A row per (user, entity), not a boolean on the entity. `views.favorited` is
+ * a boolean on the view row, which cannot be right for anything more than one
+ * person touches: it makes a star a property of the thing rather than of the
+ * viewer. A project is far more likely than a saved view to matter to one
+ * member and not another, so copying that shape would bake the same mistake
+ * into a second table.
+ *
+ * `entity_type` is here so pages and cycles can join later without a third
+ * table. Views are deliberately NOT migrated onto it in this change: that
+ * would alter the M3 views payload, which is outside this ticket.
+ */
+export const favorites = sqliteTable("favorites", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  createdAt: integer("created_at").notNull(),
+}, (t) => [
+  uniqueIndex("favorites_user_entity_unique").on(t.userId, t.entityType, t.entityId),
+  index("favorites_user_type_idx").on(t.userId, t.entityType),
+  check("favorites_entity_type_check", sql`entity_type IN ('project')`),
+]);
+
 export const milestones = sqliteTable("milestones", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull()

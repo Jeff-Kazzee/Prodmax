@@ -19,7 +19,7 @@ import { toastApiError, toastOk } from "@island/app/toast";
 import { IssueViewsScreen } from "@island/features/issues";
 import { useLookups } from "@island/features/issues/use-lookups";
 import { AddIssuesDialog } from "./add-issues-dialog";
-import { trashProject } from "./api";
+import { favoriteProject, trashProject } from "./api";
 import { MilestonesTab } from "./tab-milestones";
 import { OverviewTab } from "./tab-overview";
 import { UpdatesTab } from "./tab-updates";
@@ -114,6 +114,12 @@ export function ProjectScreen() {
         active={section}
         onPatch={(body) => {
           void state.patchProject(body).catch(toastApiError);
+        }}
+        onToggleFavorite={() => {
+          if (!wsId) return;
+          void favoriteProject(wsId, project.id)
+            .then(() => void state.reloadProject())
+            .catch(toastApiError);
         }}
         onTrash={() => {
           if (!wsId) return;

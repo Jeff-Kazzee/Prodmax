@@ -93,6 +93,10 @@ export function postUpdate(
   );
 }
 
+export function favoriteProject(wsId: string, id: string): Promise<{ favorited: boolean }> {
+  return apiPost<{ favorited: boolean }>(`/api/projects/${q(id)}/favorite?wsId=${q(wsId)}`);
+}
+
 export function deleteUpdate(wsId: string, id: string): Promise<{ ok: boolean }> {
   return apiDelete<{ ok: boolean }>(`/api/project-updates/${q(id)}?wsId=${q(wsId)}`);
 }
