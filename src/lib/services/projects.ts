@@ -154,6 +154,7 @@ export function updateProject(wsId: string, id: string, input: PatchProjectInput
   if (input.color !== undefined) patch.color = input.color;
   if (input.briefPageId !== undefined) patch.briefPageId = input.briefPageId;
   if (input.updateCadence !== undefined) patch.updateCadence = input.updateCadence;
+  if (input.position !== undefined) patch.position = input.position;
   if (input.archived !== undefined) patch.archivedAt = input.archived ? now : null;
   currentDb().update(projects).set(patch).where(eq(projects.id, row.id)).run();
   return getProject(wsId, id);

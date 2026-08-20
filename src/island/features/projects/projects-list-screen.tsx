@@ -3,21 +3,24 @@
  * read from the materialized cache. Rows keep the server's fractional
  * position order inside a group.
  *
- * No drag reorder ships. `patchProjectSchema` has no `position` field, so a
- * drag handle would either fail or persist nowhere, and AGENTS.md forbids a
- * control that is not wired to real behaviour. The status select below is a
- * real PATCH and moves a row between groups. See T-028.
+ * Rows drag to reorder within their status group. The drop writes a fractional
+ * midpoint key through `PATCH /api/projects/:id {position}`, so no sibling row
+ * is rewritten (T-028). Dragging across groups is not a reorder and is
+ * ignored: the status select is how a project changes status, and inferring a
+ * status change from a drop would make one gesture mean two things.
  *
  * `data-screen="Projects"` and the "Projects" heading are load-bearing:
  * tests/e2e/shell.spec.ts asserts both on this route.
  */
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@island/components/ui/button";
 import { Skeleton } from "@island/components/ui/skeleton";
 import { IssuesEmpty } from "@/components/issues/issues-empty";
+import { cn } from "@/lib/utils";
 import { useSession } from "@island/app/session";
 import { toastApiError, toastOk } from "@island/app/toast";
+import { generateKeyBetween } from "@/db/positions";
 import { createProject, patchProject } from "./api";
 import { ProgressBar } from "./progress-bar";
 import { useProjectsList } from "./use-projects";
@@ -37,13 +40,38 @@ function formatTarget(project: ProjectDto): string | null {
 function ProjectRow({
   project,
   onStatus,
+  onDragStart,
+  onDropBefore,
 }: {
   project: ProjectDto;
   onStatus: (status: ProjectStatus) => void;
+  onDragStart: () => void;
+  onDropBefore: () => void;
 }) {
   const target = formatTarget(project);
+  const [over, setOver] = useState(false);
   return (
-    <li className="border-b last:border-b-0">
+    <li
+      className={cn("border-b last:border-b-0", over && "border-t-2 border-t-ring")}
+      draggable
+      aria-label={`Reorder ${project.name}`}
+      data-project-id={project.id}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", project.id);
+        e.dataTransfer.effectAllowed = "move";
+        onDragStart();
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(false);
+        onDropBefore();
+      }}
+    >
       <div className="grid items-center gap-3 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_220px_140px_150px]">
         <div className="flex min-w-0 items-center gap-2">
           <span
@@ -96,6 +124,9 @@ export function ProjectsListScreen() {
   const wsId = session.activeWorkspace?.id ?? null;
   const { projects, status, reload } = useProjectsList(wsId);
   const [createOpen, setCreateOpen] = useState(false);
+  // A ref, not state: the id is read once on drop and re-rendering the whole
+  // list mid-drag would cancel the gesture.
+  const dragged = useRef<string | null>(null);
 
   const groups = useMemo(() => {
     return PROJECT_STATUSES.map((s) => ({
@@ -111,6 +142,35 @@ export function ProjectsListScreen() {
       .then(() => {
         reload();
         toastOk(`${project.name} moved to ${PROJECT_STATUS_LABELS[next]}`);
+      })
+      .catch(toastApiError);
+  };
+
+  /**
+   * Reorder within a status group.
+   *
+   * The dragged project takes a key between the row it was dropped on and that
+   * row's predecessor, so it lands immediately above the drop target and no
+   * other row is touched. A drop onto a different status group is ignored:
+   * position and status are separate facts, and the select beside each row is
+   * how status changes.
+   */
+  const onReorder = (draggedId: string, target: ProjectDto) => {
+    if (!wsId || draggedId === target.id) return;
+    const dragged = projects.find((p) => p.id === draggedId);
+    if (!dragged || dragged.status !== target.status) return;
+
+    const group = projects.filter((p) => p.status === target.status);
+    const targetIndex = group.findIndex((p) => p.id === target.id);
+    const previous = group[targetIndex - 1];
+    // Dropping a row onto the one already below it is a no-op, not a move.
+    if (previous?.id === draggedId) return;
+    const position = generateKeyBetween(previous?.position ?? null, target.position);
+
+    void patchProject(wsId, draggedId, { position })
+      .then(() => {
+        reload();
+        toastOk(`${dragged.name} moved`);
       })
       .catch(toastApiError);
   };
@@ -173,6 +233,14 @@ export function ProjectsListScreen() {
                     key={project.id}
                     project={project}
                     onStatus={(next) => onStatus(project, next)}
+                    onDragStart={() => {
+                      dragged.current = project.id;
+                    }}
+                    onDropBefore={() => {
+                      const from = dragged.current;
+                      dragged.current = null;
+                      if (from) onReorder(from, project);
+                    }}
                   />
                 ))}
               </ul>
