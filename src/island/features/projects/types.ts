@@ -82,6 +82,8 @@ export interface ProjectDto {
   updatedAt: number;
   /** Derived MAX(project_updates.created_at) (§2.4). */
   lastUpdateAt: number | null;
+  /** Whether the CALLER has starred it. Per-user, never a project property. */
+  favorited: boolean;
 }
 
 /** Derived on every read, never stored (§2.4). */

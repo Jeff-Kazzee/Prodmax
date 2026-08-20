@@ -3,8 +3,8 @@
  * materialized progress caches live in ./projects-progress and are NEVER
  * recomputed on read (architecture §9).
  */
-import { and, asc, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
-import { pages, projects, projectUpdates, workspaceMembers } from "@/db/schema";
+import { and, asc, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
+import { favorites, pages, projects, projectUpdates, workspaceMembers } from "@/db/schema";
 import { uuid7 } from "@/db/ids";
 import { generateKeyBetween } from "@/db/positions";
 import { currentDb } from "@/lib/api/db";
@@ -17,8 +17,70 @@ export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type PatchProjectInput = z.infer<typeof patchProjectSchema>;
 export type ProjectRow = typeof projects.$inferSelect;
 
-function serialize(row: ProjectRow, lastUpdateAt: number | null) {
-  return { ...row, progressPoints: parseProgressPoints(row.progressPointsCache), lastUpdateAt };
+function serialize(row: ProjectRow, lastUpdateAt: number | null, favorited: boolean) {
+  return {
+    ...row,
+    progressPoints: parseProgressPoints(row.progressPointsCache),
+    lastUpdateAt,
+    favorited,
+  };
+}
+
+/**
+ * Which of these projects the reader has starred (T-029).
+ *
+ * A star is per-user, so it cannot live on the project row. One query for the
+ * whole page keeps the list at a fixed query count rather than one per row.
+ */
+function favoritedIds(userId: string, projectIds: string[]): Set<string> {
+  if (projectIds.length === 0) return new Set();
+  const rows = currentDb()
+    .select({ entityId: favorites.entityId })
+    .from(favorites)
+    .where(
+      and(
+        eq(favorites.userId, userId),
+        eq(favorites.entityType, "project"),
+        inArray(favorites.entityId, projectIds),
+      ),
+    )
+    .all();
+  return new Set(rows.map((r) => r.entityId));
+}
+
+/**
+ * Toggle a star and report the resulting state, mirroring the views route.
+ * Returns what is true after the write, so the caller never has to guess.
+ */
+export function toggleProjectFavorite(wsId: string, userId: string, id: string): boolean {
+  const project = requireProject(wsId, id);
+  const existing = currentDb()
+    .select({ id: favorites.id })
+    .from(favorites)
+    .where(
+      and(
+        eq(favorites.userId, userId),
+        eq(favorites.entityType, "project"),
+        eq(favorites.entityId, project.id),
+      ),
+    )
+    .get();
+  if (existing) {
+    currentDb().delete(favorites).where(eq(favorites.id, existing.id)).run();
+    return false;
+  }
+  currentDb()
+    .insert(favorites)
+    .values({
+      id: uuid7(),
+      workspaceId: wsId,
+      userId,
+      entityType: "project",
+      entityId: project.id,
+      createdAt: Date.now(),
+    })
+    .run();
+  return true;
 }
 
 /** last_update_at is derived (§2.4): MAX(project_updates.created_at) per project. */
@@ -78,7 +140,7 @@ export function requireProject(wsId: string, id: string): ProjectRow {
  * the issues list: archived rows are included by default (the flag is a
  * payload field); archived=true|false filters to either side.
  */
-export function listProjects(wsId: string, request: Request) {
+export function listProjects(wsId: string, request: Request, userId: string) {
   const archived = new URL(request.url).searchParams.get("archived");
   const clauses: SQL[] = [eq(projects.workspaceId, wsId), isNull(projects.deletedAt)];
   if (archived === "true") clauses.push(isNotNull(projects.archivedAt));
@@ -90,13 +152,18 @@ export function listProjects(wsId: string, request: Request) {
     .orderBy(asc(projects.position))
     .all();
   const lastByProject = lastUpdateAtByProject(wsId);
-  return rows.map((row) => serialize(row, lastByProject.get(row.id) ?? null));
+  const starred = favoritedIds(userId, rows.map((row) => row.id));
+  return rows.map((row) => serialize(row, lastByProject.get(row.id) ?? null, starred.has(row.id)));
 }
 
 /** Returns the stored materialized caches as-is — never a read-time recompute (§9). */
-export function getProject(wsId: string, id: string) {
+export function getProject(wsId: string, id: string, userId: string) {
   const row = requireProject(wsId, id);
-  return serialize(row, lastUpdateAtByProject(wsId, id).get(id) ?? null);
+  return serialize(
+    row,
+    lastUpdateAtByProject(wsId, id).get(id) ?? null,
+    favoritedIds(userId, [row.id]).has(row.id),
+  );
 }
 
 function nextProjectPosition(wsId: string): string {
@@ -112,7 +179,7 @@ function nextProjectPosition(wsId: string): string {
   return generateKeyBetween(last, null);
 }
 
-export function createProject(wsId: string, input: CreateProjectInput) {
+export function createProject(wsId: string, userId: string, input: CreateProjectInput) {
   assertReferencesInWorkspace(wsId, input);
   const now = Date.now();
   const id = uuid7();
@@ -137,10 +204,10 @@ export function createProject(wsId: string, input: CreateProjectInput) {
       updatedAt: now,
     })
     .run();
-  return getProject(wsId, id);
+  return getProject(wsId, id, userId);
 }
 
-export function updateProject(wsId: string, id: string, input: PatchProjectInput) {
+export function updateProject(wsId: string, userId: string, id: string, input: PatchProjectInput) {
   const row = requireProject(wsId, id);
   assertReferencesInWorkspace(wsId, input);
   const now = Date.now();
@@ -157,7 +224,7 @@ export function updateProject(wsId: string, id: string, input: PatchProjectInput
   if (input.position !== undefined) patch.position = input.position;
   if (input.archived !== undefined) patch.archivedAt = input.archived ? now : null;
   currentDb().update(projects).set(patch).where(eq(projects.id, row.id)).run();
-  return getProject(wsId, id);
+  return getProject(wsId, id, userId);
 }
 
 /** Soft delete (deleted_at), matching the issues trash convention. */
@@ -166,5 +233,6 @@ export function trashProject(wsId: string, id: string) {
   const now = Date.now();
   currentDb().update(projects).set({ deletedAt: now, updatedAt: now }).where(eq(projects.id, row.id)).run();
   const trashed = currentDb().select().from(projects).where(eq(projects.id, row.id)).get()!;
-  return serialize(trashed, null);
+  // A trashed project is not on anyone's list, so the star is not asserted.
+  return serialize(trashed, null, false);
 }

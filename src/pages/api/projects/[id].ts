@@ -14,15 +14,15 @@ type Ctx = { request: Request; params: Record<string, string | undefined> };
 
 export const GET = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
-  requireWorkspace(ctx.request, wsId);
-  return json({ project: getProject(wsId, ctx.params.id as string) });
+  const { member } = requireWorkspace(ctx.request, wsId);
+  return json({ project: getProject(wsId, ctx.params.id as string, member.userId) });
 });
 
 export const PATCH = route(async (ctx: Ctx) => {
   const wsId = requireWsId(ctx.request);
-  requireWorkspace(ctx.request, wsId, "member");
+  const { member } = requireWorkspace(ctx.request, wsId, "member");
   const body = await parseBodyOptional(ctx.request, patchProjectSchema);
-  return json({ project: updateProject(wsId, ctx.params.id as string, body) });
+  return json({ project: updateProject(wsId, member.userId, ctx.params.id as string, body) });
 });
 
 export const DELETE = route(async (ctx: Ctx) => {

@@ -1,9 +1,10 @@
 /**
  * PJ-01/PJ-02/PJ-03 project header and section nav, shared by R-18 and R-19.
  *
- * Every control here maps to a field `patchProjectSchema` accepts. PJ-01's
- * star is absent on purpose: favourites exist for saved views only, and there
- * is no project-favourite endpoint to wire a star to (T-029).
+ * Every control here maps to a real write. The PJ-01 star posts to
+ * `/api/projects/:id/favorite`, which toggles a per-user row rather than a
+ * flag on the project, so one member starring it changes nothing for anyone
+ * else (T-029).
  *
  * The section nav is four links rather than a Radix Tabs widget, because two
  * of the four are real routes. Links with `aria-current` are the honest role
@@ -18,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@island/components/ui/dropdown-menu";
 import { Button } from "@island/components/ui/button";
+import { Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MemberOption } from "@island/features/issues/types";
 import { ProgressBar } from "./progress-bar";
@@ -94,6 +96,7 @@ export function ProjectChrome({
   active,
   onPatch,
   onTrash,
+  onToggleFavorite,
 }: {
   project: ProjectDto;
   latestUpdate: ProjectUpdateDto | null;
@@ -104,6 +107,7 @@ export function ProjectChrome({
   active: ProjectSection;
   onPatch: (body: PatchProjectBody) => void;
   onTrash: () => void;
+  onToggleFavorite: () => void;
 }) {
   const issueCount = project.progressPoints?.issuesTotal ?? null;
   const link = (section: ProjectSection, to: string, label: string, count: number | null) => (
@@ -201,7 +205,21 @@ export function ProjectChrome({
           </select>
         </label>
 
-        <div className="ml-auto">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="ml-auto"
+          aria-pressed={project.favorited}
+          aria-label={project.favorited ? "Unstar this project" : "Star this project"}
+          onClick={onToggleFavorite}
+        >
+          <Star
+            className={cn("size-4", project.favorited && "fill-current text-amber-500")}
+            aria-hidden="true"
+          />
+        </Button>
+
+        <div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon-sm" aria-label="Project actions">

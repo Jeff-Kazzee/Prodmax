@@ -1,9 +1,10 @@
 # T-029 : PJ-01's star has nothing to write to
 
-status: open
+status: done
 module: M4 projects & cycles
 owns: src/db/schema.ts, src/pages/api/projects/[id]/favorite.ts, src/lib/services/projects.ts, tests/api/projects*.test.ts
 depends-on: none
+assignee: claude-opus-5 session 6858dcdc, 2026-08-19
 
 > Read `planning/tickets/README.md` first (shell rules, gates, anti-stall).
 
@@ -52,3 +53,61 @@ checkpoint per `planning/tickets/README.md`.
 
 Starring a project survives a reload and does not leak across workspaces. All
 four gates green.
+
+## Work log
+
+Session `6858dcdc`, 2026-08-19. Branch `feat/t-029-project-favorites`.
+
+```
+════ GATE VERDICT ════
+PASS build  complete
+PASS check  282 files, 0 errors
+PASS test   files: 56 passed (56) | tests: 292 passed (292)
+PASS e2e    9 passed (10.5s)
+ALL GATES PASS
+```
+
+### Deliverable 1, the decision
+
+A per-user `favorites` table, not a boolean on `projects`.
+
+`views.favorited` is a boolean on the view row, which makes a star a property
+of the thing rather than of the viewer. That is wrong for anything more than
+one person touches, and a project is far likelier than a saved view to matter
+to one member and not another. Copying it would have baked the same mistake
+into a second table, and the mistake is invisible in a single-user test: the
+boolean design passes every test in the new file except the isolation one.
+
+Shape is `(workspace_id, user_id, entity_type, entity_id, created_at)` with a
+unique index on `(user_id, entity_type, entity_id)`. `entity_type` is there so
+pages and cycles can join later without a third table, and its CHECK currently
+allows `project` alone, so a future entity is a deliberate migration rather
+than a silent widening.
+
+Views are NOT migrated onto it here. That would change the M3 views payload,
+which is outside this ticket. The two mechanisms coexist until someone owns
+that move.
+
+### Migration
+
+`0002_parallel_warhawk.sql`, purely additive: one CREATE TABLE and two
+indexes. No existing table is touched, so it does not have to serialize
+against anything currently in flight, but per `planning/tickets/README.md` it
+is still the one migration landing in this window.
+
+### Constraint amendment
+
+`owns:` names `src/pages/api/projects/[id]/favorite.ts`, but a star has to be
+readable as well as writable, so `favorited` joins the project payload and
+`src/pages/api/projects/index.ts` and `[id].ts` thread the actor through. The
+list resolves the whole page in one query rather than one per row.
+
+### Falsification
+
+| Break | Failure |
+|---|---|
+| Drop the `userId` predicate, making the star workspace-wide | `expected true to be false` on the isolation test |
+
+That break is the boolean-on-project design in miniature, and it is the only
+test in the file that notices.
+
