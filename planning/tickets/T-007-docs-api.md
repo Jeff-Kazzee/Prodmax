@@ -206,3 +206,170 @@ no ticket was filed.
   gap here.
 - Block-level comments, backlinks and page history (PE-03) are not in §3.6's
   ten endpoints and are not built.
+
+---
+
+## Work log, round 2: the review, and what it found
+
+Four independent reviewers ran against the frozen commit `d0a16fa`, one per
+lens: state transitions, security and permissions, vacuous assertions, and spec
+conformance. They found **ten defects and three unfalsifiable guards** in a tree
+whose four gates were green. Everything below was reproduced before it was
+fixed, and every fix was then falsified.
+
+Final gate run:
+
+```
+════ GATE VERDICT ════
+PASS build  complete
+PASS check  314 files, 0 errors
+PASS test   files: 64 passed (64) | tests: 406 passed (406)
+PASS e2e    9 passed (13.2s)
+ALL GATES PASS
+```
+
+Exit code 0, counts parsed. Round 1 was 62 files / 357 tests, so the review
+round added 2 files and 49 tests. Docs suites shuffled at seed 2: 114/114.
+
+### The correction that matters most
+
+Round 1's ledger claimed the §9 one-query invariant was pinned. **It was not.**
+`recordStatements` counted `prepare` calls. A better-sqlite3 `Statement` is
+reusable, so the N+1 that a real performance regression produces, one prepare
+hoisted outside the loop and one execution per row, called `prepare` exactly
+once and was invisible. A reviewer replaced the single ordered SELECT with a
+recursive child walk doing **61 executions** over `blocks` and every assertion
+stayed green, including the "same cost at 3 blocks as at 60" one.
+
+The mutation in round 1's ledger (`N+1 added to listPageBlocks`) happened to
+use the one shape that re-prepares per row, which is the shape a regression is
+least likely to take. Reading the ledger, that entry looked like proof. It was
+a coincidence.
+
+`recordStatements` now wraps the returned `Statement` and records on `all`,
+`get`, `run` and `iterate`, so it counts executions. Re-run against the same
+hoisted-prepare walk it reports
+`expected [ …(61) ] to have a length of 1 but got 61`. The implementation was
+right the whole time; only the proof was hollow.
+
+### Defects fixed (all reproduced first)
+
+| Severity | Defect |
+|---|---|
+| Critical | A block could be moved under its own descendant. `resolvePlacement` checked self-parenting only, never ancestry. The ring was invisible to any client tree and undeletable: `softDeleteBlockRows` walked it with no visited set, growing its queue until `RangeError: Invalid array length` after about 7.5s of one core. |
+| High | Re-inserting a soft-deleted block id hit the primary key and 500ed. ED-11 undo-of-delete has no other path back, and §3.6 has no block restore endpoint. |
+| High | `patchPage` wrote metadata outside any transaction, then delegated the move, so a rename plus a rejected move committed the rename and returned an error. |
+| High | Turn-into could convert a parent into a leaf type while it still had children, reaching from the other side the exact state the `Placement` brand claims is unreachable. |
+| Medium | The batch replay branch left the in-memory view's type stale, so a later op validated against a type the row no longer had. |
+| Medium | `patchPage` bumped `version` twice for one request. |
+| Medium | `table` props capped only the outer `rows` array. One block accepted 200,000 richText nodes and held the single SQLite writer for 1.6s, stalling every other workspace on the process. |
+| Low | A too-deep page template threw a plain `Error`, so it became `INTERNAL` 500. §3 says VALIDATION is 400 on every route. |
+| Binding | No endpoint read `?expectedVersion=`, though `pages` and `blocks` are both versioned. §3: "All mutating endpoints accept `?expectedVersion=` where the entity is versioned; mismatch to 409 CONFLICT". This was not even in round 1's "Not done" list. |
+| Binding | `GET /api/pages` and `GET /api/templates` ignored `?limit=` and `?cursor=`. |
+
+Also closed: dangling `issue_view.viewId` and `page_link.pageId` are now
+rejected at write time rather than stored; templates round-trip the
+`recurrence` column §2.7 gives them; a team-scoped template must name a team of
+its own workspace; the trash window is one predicate rather than two that
+disagreed by a millisecond; `image.url` accepts a root-relative path and is
+optional so ED-08's upload placeholder can exist; the tree's `hasChildren`
+query is scoped to the visible ids rather than scanning every live page; and
+`cloneNodes` reads the page once instead of once per cloned node.
+
+### Guards that could not fail, and are repaired
+
+1. **The statement counter.** Above.
+2. **The choke-point detector.** `rawWrites` matched 5 of 16 write shapes. A
+   reviewer added a real, effective block write to `pages.ts` using drizzle's
+   own table interpolation and all five gate tests stayed green while the write
+   landed. `WRITE_SHAPES` now pins the detector itself against every shape,
+   including quoted, namespaced, schema-qualified, interpolated,
+   `INSERT OR REPLACE`, `REPLACE INTO` and `UPDATE OR IGNORE`.
+3. **The EXPLAIN assertion.** It checked that the index name appears in the
+   plan, which stays true when the ORDER BY moves to a sort buffer: the index
+   still serves the `page_id` lookup. Paired now with
+   `not.toContain("USE TEMP B-TREE FOR ORDER BY")`.
+
+Four more were weak rather than empty and were strengthened: the nest matrix
+covered 12 of 19 block types (flipping `heading_2` to child-bearing was
+invisible) and now covers all 19 against a hand-transcribed §2.6 table; the
+batch cap was tested only from above, so `>` to `>=` went unseen; the
+fixed-point move test passed with `movePage` disabled entirely and now proves
+the move happened first and includes `position` and `version`; the template
+clone asserted five primary keys are distinct, which is a tautology, and now
+compares two instantiations of the same template.
+
+### One fix that turned out to be no fix
+
+I added a transaction wrapper to `patchPage` and claimed it fixed the
+half-applied PATCH. Falsification says otherwise: removing the wrapper breaks
+no test, because folding the metadata into `movePage`'s own UPDATE already
+leaves exactly one write on either branch. Mutating the fold away does fail
+three assertions. The wrapper was deleted rather than kept as decoration, and
+the claim was corrected instead of left standing.
+
+### Falsification, round 2
+
+Seventeen mutations, all red with the expected message. Every one asserted its
+anchor was present first and was applied in binary mode with `git diff --stat`
+checked.
+
+| Mutation | Failure |
+|---|---|
+| hoisted-prepare N+1 in the page open | `expected [ …(61) ] to have a length of 1 but got 61` |
+| block cycle check removed | `expected 200 to be 409` |
+| delete visited set removed | `expected 500 to be 200` |
+| soft-deleted revive branch removed | `expected 500 to be 200` |
+| turn-into children guard removed | `expected 200 to be 400` |
+| replay branch stops syncing view type | `expected 200 to be 400` |
+| table inner cell cap removed | `expected 201 to be 400` |
+| block expectedVersion ignored | `expected 200 to be 409` |
+| page expectedVersion ignored | `expected 200 to be 409` |
+| page_link referential check removed | `expected 201 to be 400` |
+| metadata fold reverted to two writes | `expected 'RENAMED' to be 'Parent'`, and `expected 3 to be 2` |
+| trash window predicate split again | `expected true to be false` |
+| pages list stops paginating | `expected [ …(6) ] to have a length of 2 but got 6` |
+| template recurrence dropped on write | `expected null to deeply equal { freq: 'weekly', every: 1 }` |
+| template depth throws a plain Error | `expected 500 to be 400` |
+| template teamId check removed | `expected 201 to be 400` |
+| tree hasChildren unscoped | `page query not scoped by parent: select distinct "parent_id" from "pages" where …` |
+| `page_link` renamed in BLOCK_SPECS | `- "page_links" / + "page_link"` |
+
+The tree entry took two attempts and is worth recording. The first version
+asserted the statement text matches `/parent_id/i`, which passed against the
+unscoped query because `SELECT DISTINCT parent_id` carries the column name in
+its projection. It now reads the WHERE clause only.
+
+### A reviewer claim that was wrong
+
+One reviewer reported `tests/db/fts.test.ts`'s ranking assertion as
+near-vacuous. Checked by mutating `bm25(search_fts, 10.0, 1.0)` to
+`bm25(search_fts, 1.0, 1.0)` and running the real test: it fails at line 34,
+because the ordering assertion catches it. Only line 36's
+`score[0] > score[1]` is decorative, riding an 8.9e-7 gap. No ticket filed.
+Verifying stopped a wrong one being written.
+
+### Process note
+
+Twice I reverted a mutation with `git checkout -- <file>` on a file that also
+held uncommitted fixes, and lost them. The second time cost four fixes in
+`pages.ts`. Falsification and uncommitted work do not mix: commit first, then
+mutate.
+
+### Tickets filed from this round
+
+- **T-037**, the three spec amendments this implementation owes (tree URL,
+  instantiate payload, camelCase template data).
+- **T-038**, bookmark/embed have no server unfurl and search returns no
+  snippet or block anchor. Both are ux-spec requirements outside §3.6's ten
+  endpoints. The unfurl half needs an SSRF design before any code.
+
+### Still not done, and still unverified
+
+Everything in round 1's list stands, minus the items fixed above, plus:
+
+- `CANDIDATE_WINDOW` is still 500 and still unmeasured.
+- No test asserts a statement count on the template instantiate path, so the
+  `cloneNodes` improvement is a reasoned change rather than a pinned one.
+- The block `text` column is derived for FTS, but nothing asserts the page's
+  FTS body after a block soft-delete followed by a revive.
